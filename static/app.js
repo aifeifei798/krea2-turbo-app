@@ -11,7 +11,12 @@ const state = {
   style: "none",
   aspect: "1:1",
   batch: 1,
-  loras: [], // {id, name, filename, size_mb, on, weight}
+  loras: [], // {id, name, filename, size_mb, on(=已加载), weight}
+  selectedPrecision: "bf16",
+  precisionHints: {},
+  modelReady: false,
+  modelState: null,
+  modelPrecision: null,
   generating: false,
   currentTask: null,
   pollTimer: null,
@@ -54,13 +59,25 @@ async function pollStatus() {
       $("loading-overlay").classList.add("hidden");
       $("loading-overlay").classList.remove("flex");
       $("generate-btn").disabled = state.generating;
+      // 精度切换后（新模型实例）LoRA 全部回到未加载，刷新一次
+      if (state.modelPrecision !== null && state.modelPrecision !== st.precision) {
+        const loras = await fetch("/api/loras").then((r) => r.json()).catch(() => null);
+        if (loras) renderLoras(loras);
+      }
+      state.modelPrecision = st.precision;
       return true;
     }
     if (st.state === "error") {
       setStatus("加载失败", "bg-danger");
       $("loading-overlay").classList.add("hidden");
       $("loading-overlay").classList.remove("flex");
-      toast(st.detail, true);
+      return true;
+    }
+    if (st.state === "unloaded") {
+      // 手动卸载后不弹全屏遮罩，模型页有状态卡
+      $("loading-overlay").classList.add("hidden");
+      $("loading-overlay").classList.remove("flex");
+      setStatus("未加载", "bg-muted");
       return true;
     }
     // loading：显示覆盖层 + 进度文案
@@ -76,16 +93,114 @@ async function pollStatus() {
   }
 }
 
-/* 模型页状态卡与顶栏徽标同步 */
+/* 顶栏徽标 + 模型页状态卡同步 */
 function syncModelState(st) {
+  state.modelReady = st.state === "ready";
+  state.modelState = st.state;
   const dot = $("model-state-dot");
   const ready = st.state === "ready";
   const failed = st.state === "error";
-  $("model-state-text").textContent = ready ? "就绪" : failed ? "失败" : "加载中";
-  dot.className = `w-1.5 h-1.5 rounded-full ${ready ? "bg-accent" : failed ? "bg-danger" : "pulse-dot bg-muted"}`;
+  const loading = st.state === "loading";
+  const unloaded = st.state === "unloaded";
+  $("model-state-text").textContent =
+    ready ? "就绪" : failed ? "失败" : loading ? "加载中" : "未加载";
+  dot.className = `w-1.5 h-1.5 rounded-full ${ready ? "bg-accent" : failed ? "bg-danger" : loading ? "pulse-dot bg-muted" : "bg-muted"}`;
   $("model-state").classList.toggle("border-accent", ready);
   $("model-state").classList.toggle("text-accent", ready);
   $("model-detail").textContent = st.detail || "—";
+  $("model-detail").classList.toggle("text-danger", failed);
+  if (st.precision) state.modelPrecision = st.precision;
+  syncLoadButtons(st.state);
+}
+
+/* 加载/卸载按钮态：加载在 未加载/失败/换精度 时可用；卸载在 就绪 时可用 */
+function syncLoadButtons(modelState) {
+  const loading = modelState === "loading";
+  const ready = modelState === "ready";
+  const samePrecision = state.selectedPrecision === state.modelPrecision;
+  $("model-load-btn").disabled = loading || (ready && samePrecision);
+  $("model-load-btn").textContent = ready && !samePrecision ? "切换并重载" : "加载模型";
+  $("model-unload-btn").disabled = !ready || loading;
+}
+
+/* ---------- 模型页：精度选择 + 加载/卸载 ---------- */
+
+function renderPrecision(hints) {
+  state.precisionHints = hints || {};
+  const group = $("precision-group");
+  group.innerHTML = "";
+  [["bf16", "BF16 全精度"], ["int8", "INT8 8bit"], ["int4", "INT4 4bit"]].forEach(([id, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.dataset.id = id;
+    b.setAttribute("aria-pressed", String(id === state.selectedPrecision));
+    b.className = precisionClass(id === state.selectedPrecision);
+    b.addEventListener("click", () => {
+      state.selectedPrecision = id;
+      group.querySelectorAll("button").forEach((x) => {
+        const on = x.dataset.id === state.selectedPrecision;
+        x.setAttribute("aria-pressed", String(on));
+        x.className = precisionClass(on);
+      });
+      syncPrecisionHint();
+      syncLoadButtons(state.modelState || "ready");
+    });
+    group.appendChild(b);
+  });
+  syncPrecisionHint();
+}
+
+const precisionClass = (on) =>
+  `py-1.5 rounded-sm border font-mono text-xs transition-colors ${on
+    ? "border-accent bg-accent-dim text-accent"
+    : "border-border bg-panel-2 text-muted hover:border-accent hover:text-ink"}`;
+
+function syncPrecisionHint() {
+  $("precision-hint").textContent =
+    state.precisionHints[state.selectedPrecision] || "—";
+}
+
+async function loadModel() {
+  const btn = $("model-load-btn");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/model/load", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ precision: state.selectedPrecision }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(friendlyApiError({ ...err, status: res.status }));
+    }
+  } catch (e) {
+    toast(`加载请求失败：${e.message}`, true);
+    pollStatus();
+    return;
+  }
+  // 等加载线程先把状态切成 loading，再进入轮询，避免误判"已就绪"
+  await new Promise((r) => setTimeout(r, 500));
+  waitReady();
+}
+
+async function unloadModel() {
+  try {
+    const res = await fetch("/api/model/unload", { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } catch (e) {
+    toast(`卸载失败：${e.message}`, true);
+  }
+  await pollStatus();
+  // 卸载后 LoRA 全部回到未加载
+  const loras = await fetch("/api/loras").then((r) => r.json()).catch(() => null);
+  if (loras) renderLoras(loras);
+  toast("模型已卸载");
+}
+
+function bindModel() {
+  $("model-load-btn").addEventListener("click", loadModel);
+  $("model-unload-btn").addEventListener("click", unloadModel);
 }
 
 /* ---------- 视图切换 ---------- */
@@ -234,19 +349,18 @@ function bindControls() {
 const LORA_RANGE_MAX = 2;
 
 function renderLoras(loras) {
-  state.loras = loras.map((l) => ({ ...l, on: false, weight: 1.0 }));
+  state.loras = loras.map((l) => ({ ...l, on: !!l.loaded, weight: 1.0, busy: false }));
   const grid = $("lora-grid");
   grid.innerHTML = "";
   $("lora-empty").classList.toggle("hidden", loras.length > 0);
-  $("lora-active-count").textContent = "";
+  syncLoraSummary();
 
   state.loras.forEach((lora, i) => {
     const card = document.createElement("div");
-    card.className = loraCardClass(false);
     card.innerHTML = `
       <div class="flex items-center gap-2.5">
         <button type="button" data-toggle="${i}" role="switch" aria-checked="false"
-          aria-label="启用 ${escapeAttr(lora.name)}"
+          aria-label="加载 ${escapeAttr(lora.name)}"
           class="lora-toggle shrink-0 w-9 h-5 rounded-sm border border-border bg-panel-2 relative transition-colors">
           <span class="absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-[2px] bg-muted transition-[left]"></span>
         </button>
@@ -265,23 +379,26 @@ function renderLoras(loras) {
       syncLoraSummary();
     });
     grid.appendChild(card);
+    applyLoraUI(i);
   });
-  syncLoraSummary();
 }
 
 const loraCardClass = (on) =>
   `border rounded-md bg-panel p-3 transition-colors ${on
     ? "border-accent" : "border-border opacity-60"}`;
 
-function toggleLora(i) {
+/* 把 state.loras[i] 的 on/busy 状态渲染到卡片 */
+function applyLoraUI(i) {
   const lora = state.loras[i];
-  lora.on = !lora.on;
   const card = $("lora-grid").children[i];
   card.className = loraCardClass(lora.on);
   const btn = card.querySelector(`[data-toggle="${i}"]`);
   btn.setAttribute("aria-checked", String(lora.on));
+  btn.disabled = lora.busy;
+  btn.setAttribute("aria-label", `${lora.on ? "卸载" : "加载"} ${lora.name}`);
   btn.classList.toggle("border-accent", lora.on);
   btn.classList.toggle("bg-accent-dim", lora.on);
+  btn.classList.toggle("opacity-50", lora.busy);
   const knob = btn.querySelector("span");
   knob.classList.toggle("left-0.5", !lora.on);
   knob.classList.toggle("left-[18px]", lora.on);
@@ -290,16 +407,43 @@ function toggleLora(i) {
   const slider = card.querySelector(`[data-weight="${i}"]`);
   slider.disabled = !lora.on;
   card.querySelector(`[data-wval="${i}"]`).classList.toggle("text-muted", !lora.on);
-  syncLoraSummary();
 }
 
-/* 制作页的 LoRA 摘要条 + 模型页启用计数 */
+/* 开关 = 加载/卸载（后端常驻管理），失败时回滚 */
+async function toggleLora(i) {
+  const lora = state.loras[i];
+  if (lora.busy) return;
+  const target = !lora.on;
+  lora.busy = true;
+  applyLoraUI(i);
+  try {
+    const res = await fetch("/api/loras/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: lora.id, on: target }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(friendlyApiError({ ...err, status: res.status }));
+    }
+    lora.on = target;
+    toast(target ? "LoRA 已加载（常驻）" : "LoRA 已卸载");
+  } catch (e) {
+    toast(`操作失败：${e.message}`, true);
+  } finally {
+    lora.busy = false;
+    applyLoraUI(i);
+    syncLoraSummary();
+  }
+}
+
+/* 制作页的 LoRA 摘要条 + 模型页加载计数 */
 function syncLoraSummary() {
   const active = activeLoras();
   const names = state.loras.filter((l) => l.on);
   const summary = $("lora-summary");
   if (!names.length) {
-    summary.textContent = "未启用";
+    summary.textContent = "未加载";
     summary.classList.add("text-muted");
     summary.classList.remove("text-ink");
     $("lora-active-count").textContent = "";
@@ -307,7 +451,7 @@ function syncLoraSummary() {
     summary.textContent = names.map((l) => `${l.name} ${l.weight.toFixed(2)}`).join(" · ");
     summary.classList.remove("text-muted");
     summary.classList.add("text-ink");
-    $("lora-active-count").textContent = `${names.length} 个已启用`;
+    $("lora-active-count").textContent = `${names.length} 个已加载`;
   }
 }
 
@@ -354,7 +498,7 @@ function setProgress(step, total, text) {
 function setGenerating(on) {
   state.generating = on;
   const btn = $("generate-btn");
-  btn.disabled = on || $("status-text").textContent !== "模型就绪";
+  btn.disabled = on || !state.modelReady;
   $("progress-wrap").classList.toggle("hidden", !on);
   if (on) {
     btn.innerHTML = '生成中 <span class="font-mono">…</span>';
@@ -455,7 +599,9 @@ function cardHTML(img) {
   const seedText = img.seed === null || img.seed === undefined ? "auto" : String(img.seed);
   return `
     <figure class="group relative border border-border rounded-md overflow-hidden bg-panel cursor-pointer" data-id="${img.id}" tabindex="0" role="button" aria-label="查看：${escapeAttr((img.prompt || "未命名图片").slice(0, 40))}">
-      <img src="${img.url}" alt="${escapeAttr(img.prompt || "生成的图片")}" loading="lazy" class="w-full h-auto block">
+      <div class="w-full aspect-[4/3] bg-panel-2 flex items-center justify-center overflow-hidden">
+        <img src="${img.url}" alt="${escapeAttr(img.prompt || "生成的图片")}" loading="lazy" class="max-w-full max-h-full w-auto h-auto object-contain">
+      </div>
       <figcaption class="absolute inset-x-0 bottom-0 hidden group-hover:block group-focus-within:block bg-paper/85 px-3 py-2">
         <div class="flex items-center gap-2 font-mono text-xs text-muted">
           <span class="text-ink truncate">${escapeHTML(img.style_name || "自由发挥")}</span>
@@ -632,19 +778,26 @@ function bindLightbox() {
 async function init() {
   bindControls();
   bindNav();
+  bindModel();
   bindLightbox();
   renderExamples();
   try {
-    const [presets, loras] = await Promise.all([
+    const [presets, modelInfo] = await Promise.all([
       fetch("/api/presets").then((r) => r.json()),
-      fetch("/api/loras").then((r) => r.json()).catch(() => []),
+      fetch("/api/model").then((r) => r.json()).catch(() => null),
     ]);
     renderPresets(presets);
-    renderLoras(loras);
+    if (modelInfo) {
+      renderPrecision(modelInfo.precision_hints);
+      syncModelState(modelInfo);
+    }
   } catch {
     toast("预设加载失败，请刷新页面", true);
   }
   loadGallery().catch(() => {});
+  try {
+    renderLoras(await fetch("/api/loras").then((r) => r.json()));
+  } catch { /* loras 目录可能为空 */ }
   waitReady();
 }
 

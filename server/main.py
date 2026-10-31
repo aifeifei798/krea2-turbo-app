@@ -4,8 +4,10 @@
 """
 
 import json
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -43,9 +45,40 @@ class GenerateIn(BaseModel):
     loras: list[LoraIn] = Field(default_factory=list, max_length=4)
 
 
+class ModelLoadIn(BaseModel):
+    precision: Literal["bf16", "int8", "int4"]
+
+
+class LoraToggleIn(BaseModel):
+    id: str
+    on: bool
+
+
 @app.get("/api/status")
 def status():
-    return pipeline.get_load_state()
+    return pipeline.get_model_state()
+
+
+@app.get("/api/model")
+def model_state():
+    return {**pipeline.get_model_state(),
+            "precision_hints": pipeline.get_precision_hints()}
+
+
+@app.post("/api/model/load")
+def model_load(body: ModelLoadIn):
+    state = pipeline.get_model_state()
+    if state["state"] == "loading":
+        raise HTTPException(409, "模型正在加载中")
+    threading.Thread(target=pipeline.load_model, args=(body.precision,),
+                     name="model-loader", daemon=True).start()
+    return {"ok": True, "precision": body.precision}
+
+
+@app.post("/api/model/unload")
+def model_unload():
+    pipeline.unload_model()
+    return {"ok": True}
 
 
 @app.get("/api/presets")
@@ -59,11 +92,23 @@ def loras():
     return pipeline.list_loras()
 
 
+@app.post("/api/loras/toggle")
+def lora_toggle(body: LoraToggleIn):
+    try:
+        return pipeline.toggle_lora(body.id, body.on)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.post("/api/generate")
 def generate(body: GenerateIn):
-    state = pipeline.get_load_state()
+    state = pipeline.get_model_state()
     if state["state"] == "loading":
         raise HTTPException(503, "模型加载中，请稍候")
+    if state["state"] == "unloaded":
+        raise HTTPException(503, "模型未加载，请到「模型」页加载")
     if state["state"] == "error":
         raise HTTPException(503, state["detail"])
     # 校验 LoRA id 有效性，未知 id 直接拒绝
