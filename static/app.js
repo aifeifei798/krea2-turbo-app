@@ -315,6 +315,32 @@ const activeLoras = () =>
   state.loras.filter((l) => l.on)
     .map((l) => ({ id: l.id, weight: Math.round(l.weight * 100) / 100 }));
 
+/* FastAPI 校验错误（422 detail 数组）转可读中文 */
+const FIELD_NAMES = {
+  prompt: "提示词", style: "风格", aspect: "比例", steps: "步数",
+  seed: "种子", batch: "批量", loras: "LoRA", weight: "强度",
+};
+
+function friendlyApiError(err) {
+  if (Array.isArray(err?.detail)) {
+    return err.detail.map((d) => {
+      const field = FIELD_NAMES[d.loc?.[1]] || d.loc?.[1] || "参数";
+      const ctx = d.ctx || {};
+      const rule = {
+        less_than_equal: `不能超过 ${ctx.le}`,
+        greater_than_equal: `不能小于 ${ctx.ge}`,
+        string_too_long: `超过 ${ctx.max_length} 字`,
+        string_too_short: `至少 ${ctx.min_length} 字`,
+        missing: "缺少该参数",
+        int_parsing: "需要是数字",
+      }[d.type] || d.msg || "格式不正确";
+      return `${field}${rule}`;
+    }).join("；");
+  }
+  if (typeof err?.detail === "string") return err.detail;
+  return `HTTP ${err?.status || ""}`.trim() || "未知错误";
+}
+
 /* ---------- 生成流程 ---------- */
 
 function setProgress(step, total, text) {
@@ -339,18 +365,30 @@ function setGenerating(on) {
   }
 }
 
+const SEED_MAX = 9007199254740991; // Number.MAX_SAFE_INTEGER，torch 上限之内
+
 async function generate() {
   const prompt = $("prompt").value.trim();
   if (!prompt) { toast("请先输入提示词", true); return; }
+  if (prompt.length > 4000) { toast("提示词超过 4000 字，请精简", true); return; }
   if (state.generating) return;
 
   const seedRaw = $("seed").value.trim();
+  let seed = null;
+  if (seedRaw !== "") {
+    seed = Math.min(Math.max(Math.floor(Number(seedRaw)) || 0, 0), SEED_MAX);
+    if (String(seed) !== seedRaw.replace(/^0+(?=\d)/, "")) {
+      $("seed").value = seed; // 超限/非法输入自动收敛回填
+      syncDataBlock();
+      toast("种子已收敛到有效范围", true);
+    }
+  }
   const body = {
     prompt,
     style: state.style,
     aspect: state.aspect,
     steps: Number($("steps").value),
-    seed: seedRaw === "" ? null : Number(seedRaw),
+    seed,
     batch: state.batch,
     loras: activeLoras(),
   };
@@ -364,7 +402,7 @@ async function generate() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `HTTP ${res.status}`);
+      throw new Error(friendlyApiError({ ...err, status: res.status }));
     }
     data = await res.json();
   } catch (e) {
@@ -416,7 +454,7 @@ function pollTask(taskId) {
 function cardHTML(img) {
   const seedText = img.seed === null || img.seed === undefined ? "auto" : String(img.seed);
   return `
-    <figure class="group relative border border-border rounded-md overflow-hidden bg-panel cursor-pointer" data-id="${img.id}" tabindex="0" role="button" aria-label="查看 ${img.prompt ? "图片" : "未命名图片"}">
+    <figure class="group relative border border-border rounded-md overflow-hidden bg-panel cursor-pointer" data-id="${img.id}" tabindex="0" role="button" aria-label="查看：${escapeAttr((img.prompt || "未命名图片").slice(0, 40))}">
       <img src="${img.url}" alt="${escapeAttr(img.prompt || "生成的图片")}" loading="lazy" class="w-full h-auto block">
       <figcaption class="absolute inset-x-0 bottom-0 hidden group-hover:block group-focus-within:block bg-paper/85 px-3 py-2">
         <div class="flex items-center gap-2 font-mono text-xs text-muted">
