@@ -5,3 +5,6 @@ static/css/dist/
 .forge/
 __pycache__/
 .zcode/
+.server.pid
+.server.meta
+.server.log

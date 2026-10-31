@@ -25,13 +25,18 @@
 
 > 注意：蒸馏模型 CFG 已关闭，**负面提示词无效**，所以界面没有这个输入。
 
-## 启动
+## 启动与管理
 
 ```bash
-# 一键启动（精度可选 bf16 | int8 | int4，端口默认 8420）
 chmod +x server.sh
-./server.sh int4            # int4 双量化
-./server.sh                 # 默认 bf16
+
+./server.sh start int4     # 后台启动（bf16|int8|int4，端口默认 8420）
+./server.sh status         # 进程 / 模型 / LoRA / 显存状态
+./server.sh log -f         # 跟随日志（或 log 30 看最近 30 行）
+./server.sh restart        # 重启（沿用上次精度；也可带精度参数）
+./server.sh stop           # 停止
+
+./server.sh run bf16       # 前台运行（Ctrl+C 停止），./server.sh int4 是它的等价写法
 ```
 
 或手动分步：
