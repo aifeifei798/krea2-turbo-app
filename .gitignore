@@ -1,0 +1,7 @@
+.venv/
+outputs/
+node_modules/
+static/css/dist/
+.forge/
+__pycache__/
+.zcode/

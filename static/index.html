@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Krea 2 Turbo 工作台</title>
+  <link rel="stylesheet" href="css/dist/app.css">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body class="bg-paper text-ink font-body antialiased h-dvh flex flex-col overflow-hidden">
+
+  <!-- 顶栏 -->
+  <header class="shrink-0 flex items-center gap-3 px-4 md:px-6 h-14 border-b border-border">
+    <span class="font-display font-bold text-lg tracking-tight">KREA&nbsp;2&nbsp;<span class="text-accent">TURBO</span></span>
+    <span class="text-muted text-xs font-mono hidden md:inline">12B · 8 步蒸馏 · 本地推理</span>
+    <nav class="ml-4 md:ml-6 flex items-center gap-1" aria-label="页面导航">
+      <button id="nav-studio" type="button" data-view="studio" aria-current="page"
+        class="px-2.5 py-1.5 text-sm font-mono border-b border-accent text-accent">制作</button>
+      <button id="nav-models" type="button" data-view="models" aria-current="false"
+        class="px-2.5 py-1.5 text-sm font-mono border-b border-transparent text-muted hover:text-ink transition-colors">模型</button>
+    </nav>
+    <span id="status-badge" class="ml-auto inline-flex items-center gap-2 font-mono text-xs px-2 py-1 rounded-sm border border-border text-muted">
+      <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-muted"></span><span id="status-text">连接中…</span>
+    </span>
+  </header>
+
+  <main class="flex-1 min-h-0">
+
+    <!-- 视图一：制作 -->
+    <div id="view-studio" class="h-full min-h-0 grid lg:grid-cols-[340px_1fr]">
+
+    <!-- 左：控制面板 -->
+    <section aria-label="生成控制" class="min-h-0 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-border p-4 md:p-5 flex flex-col gap-5">
+
+      <!-- 提示词 -->
+      <div>
+        <label for="prompt" class="block text-xs font-mono text-muted mb-2">提示词 PROMPT</label>
+        <textarea id="prompt" rows="4" placeholder="描述你想要的画面…"
+          class="w-full resize-y min-h-24 bg-panel border border-border rounded-md px-3 py-2 text-sm leading-relaxed placeholder:text-muted/60 focus:border-accent"></textarea>
+      </div>
+
+      <!-- 风格预设 -->
+      <div>
+        <span class="block text-xs font-mono text-muted mb-2">风格 STYLE</span>
+        <div id="style-chips" class="flex flex-wrap gap-1.5" role="group" aria-label="风格预设">
+          <!-- JS 填充 -->
+        </div>
+      </div>
+
+      <!-- 比例 -->
+      <div>
+        <span class="block text-xs font-mono text-muted mb-2">比例 ASPECT</span>
+        <div id="aspect-group" class="grid grid-cols-5 gap-1" role="group" aria-label="画面比例">
+          <!-- JS 填充 -->
+        </div>
+      </div>
+
+      <!-- 步数 / 批量 -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label for="steps" class="block text-xs font-mono text-muted mb-2">步数 STEPS</label>
+          <input id="steps" type="range" min="4" max="16" step="1" value="8" class="w-full mt-2.5 accent-accent">
+        </div>
+        <div>
+          <span class="block text-xs font-mono text-muted mb-2">批量 BATCH</span>
+          <div id="batch-group" class="grid grid-cols-4 gap-1" role="group" aria-label="一次生成张数">
+            <!-- JS 填充 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 种子 -->
+      <div>
+        <label for="seed" class="block text-xs font-mono text-muted mb-2">种子 SEED（留空随机）</label>
+        <div class="flex gap-1.5">
+          <input id="seed" type="number" min="0" max="2147483647" inputmode="numeric" placeholder="auto"
+            class="flex-1 min-w-0 bg-panel border border-border rounded-md px-3 py-1.5 text-sm font-mono placeholder:text-muted/60 focus:border-accent">
+          <button id="seed-random" type="button" aria-label="随机种子"
+            class="px-3 rounded-md border border-border bg-panel text-sm font-mono hover:border-accent transition-colors">随机</button>
+          <button id="seed-clear" type="button" aria-label="清除种子"
+            class="px-3 rounded-md border border-border bg-panel text-sm font-mono text-muted hover:border-accent hover:text-ink transition-colors">×</button>
+        </div>
+      </div>
+
+      <!-- LoRA 摘要（管理在「模型」页） -->
+      <div>
+        <div class="flex items-center mb-2">
+          <span class="text-xs font-mono text-muted">LoRA 模型</span>
+          <button id="goto-models" type="button"
+            class="ml-auto text-xs font-mono text-accent hover:underline">管理 →</button>
+        </div>
+        <button id="lora-summary" type="button"
+          class="w-full text-left px-3 py-2.5 rounded-md border border-border bg-panel text-sm text-muted hover:border-accent transition-colors truncate">
+          未启用
+        </button>
+      </div>
+
+      <!-- 签名数据块：等宽实时参数 -->
+      <div class="grid grid-cols-3 border border-border rounded-md divide-x divide-border bg-panel" aria-label="当前参数">
+        <div class="px-3 py-2.5">
+          <div class="text-xs font-mono text-muted">STEPS</div>
+          <div id="data-steps" class="font-mono text-base leading-6 truncate">8</div>
+        </div>
+        <div class="px-3 py-2.5">
+          <div class="text-xs font-mono text-muted">SIZE</div>
+          <div id="data-size" class="font-mono text-base leading-6 truncate">1024²</div>
+        </div>
+        <div class="px-3 py-2.5">
+          <div class="text-xs font-mono text-muted">SEED</div>
+          <div id="data-seed" class="font-mono text-base leading-6 truncate">auto</div>
+        </div>
+      </div>
+
+      <!-- 生成 + 进度 -->
+      <div>
+        <button id="generate-btn" type="button" disabled
+          class="w-full h-11 rounded-md bg-accent text-paper font-display font-bold tracking-wide text-base transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+          生成 <span class="font-mono">▸</span>
+        </button>
+        <div id="progress-wrap" class="hidden mt-3" role="progressbar" aria-label="生成进度"
+          aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="h-0.5 bg-border rounded-full overflow-hidden">
+            <div id="progress-bar" class="h-full w-full bg-accent origin-left scale-x-0 transition-transform duration-200"></div>
+          </div>
+          <div class="flex justify-between mt-1.5 font-mono text-xs text-muted">
+            <span id="progress-text">排队中…</span>
+            <span id="progress-pct" class="pulse-dot">0%</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右：画廊 -->
+    <section aria-label="生成画廊" class="min-h-0 overflow-y-auto p-4 md:p-5">
+      <div class="flex items-center gap-3 mb-4">
+        <h1 class="text-sm font-mono text-muted">作品库 <span id="gallery-count" class="text-ink">0</span></h1>
+        <button id="refresh-btn" type="button" aria-label="刷新作品库"
+          class="ml-auto text-xs font-mono text-muted hover:text-ink transition-colors">↻ 刷新</button>
+      </div>
+
+      <!-- 空态 -->
+      <div id="empty-state" class="hidden">
+        <div class="border border-dashed border-border rounded-lg py-16 px-6 text-center">
+          <p class="font-display text-xl mb-2">还没有作品</p>
+          <p class="text-sm text-muted mb-8">输入提示词，8 步出图。试试这些：</p>
+          <div id="example-prompts" class="flex flex-col sm:flex-row justify-center gap-2 max-w-3xl mx-auto">
+            <!-- JS 填充示例提示词 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 图片网格 -->
+      <div id="gallery" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        <!-- JS 填充图片卡片 -->
+      </div>
+    </section>
+    </div><!-- /view-studio -->
+
+    <!-- 视图二：模型与 LoRA -->
+    <div id="view-models" class="hidden h-full min-h-0 overflow-y-auto p-4 md:p-6">
+      <div class="max-w-4xl mx-auto flex flex-col gap-5">
+
+        <!-- 基础模型 -->
+        <section aria-label="基础模型">
+          <h1 class="text-sm font-mono text-muted mb-3">基础模型</h1>
+          <div class="border border-border rounded-lg bg-panel p-4 md:p-5">
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="font-display font-bold text-xl">Krea 2 Turbo</span>
+              <span class="font-mono text-xs text-muted">12B DiT · 8 步蒸馏 · guidance_scale 固定 0.0</span>
+              <span id="model-state" class="ml-auto inline-flex items-center gap-2 font-mono text-xs px-2 py-1 rounded-sm border border-border text-muted">
+                <span id="model-state-dot" class="w-1.5 h-1.5 rounded-full bg-muted"></span><span id="model-state-text">加载中</span>
+              </span>
+            </div>
+            <p id="model-detail" class="mt-3 font-mono text-xs text-muted break-all">正在初始化…</p>
+          </div>
+        </section>
+
+        <!-- LoRA 管理 -->
+        <section aria-label="LoRA 管理">
+          <div class="flex items-center gap-3 mb-3">
+            <h1 class="text-sm font-mono text-muted">LoRA 模型</h1>
+            <span id="lora-active-count" class="font-mono text-xs text-accent"></span>
+            <span class="ml-auto font-mono text-xs text-muted">强度 0–2 · 拖动即时生效</span>
+          </div>
+          <div id="lora-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- JS 填充 LoRA 卡片 -->
+          </div>
+          <div id="lora-empty" class="hidden border border-dashed border-border rounded-lg py-12 text-center text-sm text-muted">
+            loras 目录下没有 .safetensors 文件
+          </div>
+        </section>
+      </div>
+    </div><!-- /view-models -->
+  </main>
+
+  <!-- 模型加载覆盖层 -->
+  <div id="loading-overlay" class="fixed inset-0 z-40 bg-paper/95 hidden flex-col items-center justify-center gap-6">
+    <div class="font-display text-2xl font-bold">KREA&nbsp;2&nbsp;<span class="text-accent">TURBO</span></div>
+    <div class="w-64">
+      <div class="h-0.5 bg-border rounded-full overflow-hidden">
+        <div id="load-bar" class="h-full bg-accent w-full origin-left scale-x-[0.35] transition-transform duration-500"></div>
+      </div>
+    </div>
+    <p id="load-detail" class="text-sm text-muted font-mono">正在初始化…</p>
+  </div>
+
+  <!-- 灯箱 -->
+  <div id="lightbox" class="fixed inset-0 z-50 bg-paper/90 hidden" role="dialog" aria-modal="true" aria-label="图片详情">
+    <div class="absolute inset-0" data-close></div>
+    <div class="relative h-full flex flex-col lg:flex-row items-center justify-center gap-6 p-4 lg:p-10 pointer-events-none">
+      <img id="lb-img" src="" alt="" class="pointer-events-auto max-h-[70vh] lg:max-h-[85vh] max-w-full object-contain rounded-md border border-border">
+      <div class="pointer-events-auto w-full lg:w-80 shrink-0 bg-panel border border-border rounded-md p-4 lg:max-h-[85vh] overflow-y-auto">
+        <div class="flex items-center mb-3">
+          <h2 class="text-xs font-mono text-muted">详情</h2>
+          <button id="lb-close" type="button" aria-label="关闭详情"
+            class="ml-auto w-7 h-7 rounded-sm border border-border text-muted hover:text-ink hover:border-accent transition-colors">×</button>
+        </div>
+        <p id="lb-prompt" class="text-sm leading-relaxed mb-4 break-words"></p>
+        <dl id="lb-meta" class="font-mono text-xs text-muted space-y-1.5 mb-5 border-t border-border pt-3">
+          <!-- JS 填充参数 -->
+        </dl>
+        <div class="flex flex-wrap gap-2">
+          <a id="lb-download" href="#" download
+            class="flex-1 text-center px-3 py-2 rounded-sm bg-accent text-paper text-sm font-bold hover:opacity-90 transition-opacity">下载</a>
+          <button id="lb-copy" type="button"
+            class="flex-1 px-3 py-2 rounded-sm border border-border text-sm hover:border-accent transition-colors">复制提示词</button>
+          <button id="lb-delete" type="button"
+            class="flex-1 px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors">删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] hidden px-4 py-2.5 rounded-md border border-border bg-panel-2 text-sm shadow-lg" role="alert"></div>
+
+  <script src="app.js?v=3"></script>
+</body>
+</html>

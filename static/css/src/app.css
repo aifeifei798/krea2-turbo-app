@@ -1,0 +1,66 @@
+@import "tailwindcss";
+@import "./forge-tokens.css";
+
+/* Signal 配方：深色工程界面。字体离线优先，配方字体名在前，缺省退到系统栈。 */
+
+@theme {
+  /* 语义补充：面板底色比纸面亮一档，1px 描边做边界（配方 do：描边不用阴影） */
+  --color-panel: oklch(20% 0.015 250);
+  --color-panel-2: oklch(23% 0.015 250);
+  --color-accent-dim: oklch(80% 0.14 195 / 0.14);
+  --color-danger: oklch(66% 0.19 25);
+
+  /* 离线优先：配方字体缺货时退到系统栈，避免 serif 兜底破坏工程气质 */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* 深色滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* range 滑块（accent 电光青，1px 描边风格） */
+input[type="range"] {
+  appearance: none;
+  height: 2px;
+  background: var(--color-border);
+  border-radius: 1px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--color-accent);
+  border: none;
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--color-accent);
+  border: none;
+  cursor: pointer;
+}
+
+/* 生成中进度条的呼吸（reduced-motion 下静止） */
+@keyframes forge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.pulse-dot {
+  animation: forge-pulse 1.2s var(--ease-forge) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot { animation: none; }
+  * { transition-duration: 0.01ms !important; }
+}
+
+/* 焦点可见（Floor）：键盘可达 */
+:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+}

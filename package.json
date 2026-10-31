@@ -1,0 +1,12 @@
+{
+  "name": "krea2-turbo-app",
+  "private": true,
+  "scripts": {
+    "css:build": "tailwindcss -i static/css/src/app.css -o static/css/dist/app.css --minify",
+    "css:watch": "tailwindcss -i static/css/src/app.css -o static/css/dist/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4",
+    "tailwindcss": "^4"
+  }
+}
