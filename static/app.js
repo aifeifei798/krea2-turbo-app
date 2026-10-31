@@ -29,11 +29,13 @@ let toastTimer = null;
 function toast(msg, isError = false) {
   const el = $("toast");
   el.textContent = msg;
+  el.title = isError ? "点击复制错误信息" : "";
   el.classList.toggle("border-danger", isError);
   el.classList.toggle("text-danger", isError);
   el.classList.remove("hidden");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.add("hidden"), 3500);
+  // 错误停留 10s 且可点击复制；普通消息 3.5s
+  toastTimer = setTimeout(() => el.classList.add("hidden"), isError ? 10000 : 3500);
 }
 
 function fmtTime(ts) {
@@ -475,6 +477,8 @@ function friendlyApiError(err) {
         greater_than_equal: `不能小于 ${ctx.ge}`,
         string_too_long: `超过 ${ctx.max_length} 字`,
         string_too_short: `至少 ${ctx.min_length} 字`,
+        too_long: `最多 ${ctx.max_length} 个`,
+        too_short: `至少 ${ctx.min_length} 个`,
         missing: "缺少该参数",
         int_parsing: "需要是数字",
       }[d.type] || d.msg || "格式不正确";
@@ -780,6 +784,14 @@ async function init() {
   bindNav();
   bindModel();
   bindLightbox();
+  // 点击 toast：复制文本并关闭（错误信息不再"闪太快没复制到"）
+  $("toast").addEventListener("click", async () => {
+    const el = $("toast");
+    if (el.textContent) {
+      try { await navigator.clipboard.writeText(el.textContent); } catch { /* 剪贴板不可用则仅关闭 */ }
+    }
+    el.classList.add("hidden");
+  });
   renderExamples();
   try {
     const [presets, modelInfo] = await Promise.all([

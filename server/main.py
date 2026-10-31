@@ -42,7 +42,7 @@ class GenerateIn(BaseModel):
     steps: int = Field(default=DEFAULT_STEPS, ge=2, le=MAX_STEPS)
     seed: int | None = Field(default=None, ge=0, le=2**63 - 1)  # torch.Generator 上限
     batch: int = Field(default=1, ge=1, le=MAX_BATCH)
-    loras: list[LoraIn] = Field(default_factory=list, max_length=4)
+    loras: list[LoraIn] = Field(default_factory=list, max_length=8)
 
 
 class ModelLoadIn(BaseModel):
