@@ -9,6 +9,7 @@ import gc
 import hashlib
 import json
 import logging
+import os
 import queue
 import threading
 import time
@@ -27,9 +28,15 @@ MODEL_PATH = Path("/home/feifei/develop/models/Krea-2-Turbo")
 LORA_DIR = MODEL_PATH / "loras"
 OUTPUT_DIR = BASE_DIR / "outputs"
 
-DEFAULT_PRECISION = "bf16"  # bf16 | int8 | int4
+_PRECISIONS = ("bf16", "int8", "int4")
+# 启动精度可用环境变量指定：KREA_PRECISION=bf16|int8|int4（server.sh 传入）
+DEFAULT_PRECISION = os.environ.get("KREA_PRECISION", "bf16").strip().lower()
+if DEFAULT_PRECISION not in _PRECISIONS:
+    logger.warning("KREA_PRECISION=%s 无效，回退 bf16（可选 %s）",
+                   DEFAULT_PRECISION, "/".join(_PRECISIONS))
+    DEFAULT_PRECISION = "bf16"
 PRECISION_HINTS = {
-    "bf16": "全精度 · 子模型按需进出显存（offload），画质无损",
+    "bf16": "全精度 · offload 模式，权重需 ~58GB 磁盘换页缓冲（RAM 紧张慎用），画质无损",
     "int8": "transformer+编码器 torchao int8 · 全 GPU 常驻 ~16.7 GiB，出图约快 3 倍",
     "int4": "transformer+编码器 bnb nf4 · 全 GPU 常驻 ~9.9 GiB，最省显存，画质略降",
 }
@@ -117,6 +124,18 @@ def _build_pipe(precision: str):
     return pipe
 
 
+def _malloc_trim() -> None:
+    """把 glibc 分配器滞留的空闲内存归还 OS。
+
+    模型加载/卸载涉及数十 GB 的大块分配，glibc 默认不归还，
+    多次切换精度后 RSS 只涨不跌，最终把 32GB RAM 吃满触发 OOM。"""
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:  # noqa: BLE001 - 非 glibc 平台没有这个接口，忽略
+        pass
+
+
 def _unload_locked() -> None:
     global _pipe
     _loaded_adapters.clear()
@@ -125,6 +144,7 @@ def _unload_locked() -> None:
         _pipe = None
         gc.collect()
         torch.cuda.empty_cache()
+        _malloc_trim()
     _set_state("unloaded", "未加载", precision=None, vram_gb=None)
 
 
@@ -139,6 +159,8 @@ def load_model(precision: str) -> None:
             _set_state("loading", f"正在按 {precision} 加载（首次需几分钟）…",
                        precision=precision)
             _pipe = _build_pipe(precision)
+            gc.collect()
+            _malloc_trim()
             if precision == "bf16":
                 detail = "bf16 · offload 模式（按需进出显存）"
             else:

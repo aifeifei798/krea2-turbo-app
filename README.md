@@ -28,6 +28,15 @@
 ## 启动
 
 ```bash
+# 一键启动（精度可选 bf16 | int8 | int4，端口默认 8420）
+chmod +x server.sh
+./server.sh int4            # int4 双量化
+./server.sh                 # 默认 bf16
+```
+
+或手动分步：
+
+```bash
 # 1) Python 环境（torch 需 cu128 及以上以支持 5090/Blackwell）
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
@@ -36,7 +45,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 bun install
 bun run css:build
 
-# 3) 起服务（首次加载模型约 58GB，需几分钟）
+# 3) 起服务（首次加载模型约 58GB，需几分钟；精度用环境变量 KREA_PRECISION 指定）
 .venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port 8420
 ```
 
