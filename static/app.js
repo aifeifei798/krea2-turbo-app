@@ -10,7 +10,9 @@ const state = {
   defaultSteps: 8,
   style: "none",
   aspect: "1:1",
-  batch: 1,
+  mode: "t2i", // t2i 文生图 | i2i 图生图重绘
+  initImage: null, // 参考图 base64（不含 data: 前缀）
+  initThumb: null, // 参考图缩略 dataURL
   loras: [], // {id, name, filename, size_mb, on(=已加载), weight}
   selectedPrecision: "bf16",
   precisionHints: {},
@@ -18,10 +20,51 @@ const state = {
   modelState: null,
   modelPrecision: null,
   generating: false,
+  shownTaskImages: 0, // 当前任务已插入画廊的图片数（次数模式边跑边出图）
   currentTask: null,
   pollTimer: null,
   images: [],
 };
+
+/* ---------- 设置记忆（localStorage：保留最后一次的面板调整） ---------- */
+
+const SETTINGS_KEY = "krea2-panel-v1";
+
+function readSettings() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+const savedSettings = readSettings(); // 启动时读一次存档
+
+/* 把当前面板状态写入存档；localStorage 不可用（隐私模式等）静默跳过 */
+function saveSettings() {
+  const data = {
+    prompt: $("prompt").value,
+    style: state.style,
+    aspect: state.aspect,
+    mode: state.mode,
+    strength: Number($("strength").value),
+    steps: Number($("steps").value),
+    batch: Number($("batch").value),
+    rounds: Number($("rounds").value),
+    seed: $("seed").value,
+    precision: state.selectedPrecision,
+    // 与旧存档按 id 合并：LoRA 列表尚未渲染时不清掉已有强度
+    loraWeights: {
+      ...savedSettings.loraWeights,
+      ...Object.fromEntries(state.loras.map((l) => [l.id, l.weight])),
+    },
+  };
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
+    savedSettings.loraWeights = data.loraWeights;
+  } catch { /* 存不进就算了，不影响使用 */ }
+}
 
 /* ---------- 基础 UI ---------- */
 
@@ -61,7 +104,7 @@ async function pollStatus() {
       $("loading-overlay").classList.add("hidden");
       $("loading-overlay").classList.remove("flex");
       $("generate-btn").disabled = state.generating;
-      // 精度切换后（新模型实例）LoRA 全部回到未加载，刷新一次
+      // 精度切换后（新模型实例）LoRA 由后端重新全量加载，刷新一次同步开关与默认强度
       if (state.modelPrecision !== null && state.modelPrecision !== st.precision) {
         const loras = await fetch("/api/loras").then((r) => r.json()).catch(() => null);
         if (loras) renderLoras(loras);
@@ -147,6 +190,7 @@ function renderPrecision(hints) {
       });
       syncPrecisionHint();
       syncLoadButtons(state.modelState || "ready");
+      saveSettings();
     });
     group.appendChild(b);
   });
@@ -242,7 +286,16 @@ function renderPresets(data) {
   state.aspects = data.aspects;
   state.maxSteps = data.max_steps;
   state.defaultSteps = data.default_steps;
-  $("steps").value = state.defaultSteps;
+  // 恢复上次的调整（存档里的 id 已失效则回默认）
+  if (!state.styles.some((s) => s.id === state.style)) state.style = "none";
+  if (!state.aspects.some((a) => a.id === state.aspect)) state.aspect = "1:1";
+  $("steps").value = savedSettings.steps ?? state.defaultSteps;
+  const setSelect = (id, v) => {
+    if ([...$(id).options].some((o) => o.value === String(v))) $(id).value = v;
+  };
+  setSelect("batch", savedSettings.batch);
+  setSelect("rounds", savedSettings.rounds);
+  if (typeof savedSettings.seed === "string") $("seed").value = savedSettings.seed;
 
   const chips = $("style-chips");
   chips.innerHTML = "";
@@ -260,6 +313,7 @@ function renderPresets(data) {
         x.setAttribute("aria-pressed", String(on));
         x.className = chipClass(on);
       });
+      saveSettings();
     });
     chips.appendChild(b);
   });
@@ -282,29 +336,12 @@ function renderPresets(data) {
         x.className = aspectClass(on);
       });
       syncDataBlock();
+      saveSettings();
     });
     aspects.appendChild(b);
   });
 
-  const batches = $("batch-group");
-  batches.innerHTML = "";
-  [1, 2, 3, 4].forEach((n) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = n;
-    b.dataset.id = n;
-    b.setAttribute("aria-pressed", String(n === state.batch));
-    b.className = aspectClass(n === state.batch);
-    b.addEventListener("click", () => {
-      state.batch = n;
-      batches.querySelectorAll("button").forEach((x) => {
-        const on = Number(x.dataset.id) === state.batch;
-        x.setAttribute("aria-pressed", String(on));
-        x.className = aspectClass(on);
-      });
-    });
-    batches.appendChild(b);
-  });
+  /* 批量 / 次数用原生下拉（见 index.html），提交时直接读 select 值 */
 
   syncDataBlock();
 }
@@ -334,24 +371,147 @@ function syncDataBlock() {
 function bindControls() {
   $("steps").addEventListener("input", syncDataBlock);
   $("seed").addEventListener("input", syncDataBlock);
+  // 滑杆/输入框/下拉的任何调整立即入档（按钮类在各自 handler 里存）
+  document.addEventListener("input", saveSettings);
+  document.addEventListener("change", saveSettings);
+  // 图生图：参考图上传/拖入/移除 + 幅度读数
+  $("strength").addEventListener("input", () => {
+    $("strength-val").textContent = Number($("strength").value).toFixed(2);
+  });
+  $("i2i-drop").addEventListener("click", () => $("i2i-file").click());
+  $("i2i-drop").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("i2i-file").click(); }
+  });
+  $("i2i-file").addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (file) readInitImage(file);
+    e.target.value = ""; // 允许重复选择同一文件
+  });
+  $("i2i-drop").addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  $("i2i-drop").addEventListener("drop", (e) => {
+    e.preventDefault();
+    const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith("image/"));
+    if (file) readInitImage(file);
+    else toast("请拖入图片文件", true);
+  });
+  $("i2i-remove").addEventListener("click", (e) => {
+    e.stopPropagation();
+    setInitImage(null);
+  });
+  // 整页拖拽兜底：图片拖到上传框外也不让浏览器跳转打开原图，而是照常上传
+  document.addEventListener("dragover", (e) => {
+    if ([...(e.dataTransfer?.types || [])].includes("Files")) e.preventDefault();
+  });
+  document.addEventListener("drop", (e) => {
+    if (e.target.closest?.("#i2i-drop")) return; // 上传框自己的 handler 已处理
+    e.preventDefault();
+    const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith("image/"));
+    if (file) {
+      switchMode("i2i");
+      readInitImage(file);
+    }
+  });
   $("seed-random").addEventListener("click", () => {
     $("seed").value = Math.floor(Math.random() * 2147483647);
     syncDataBlock();
+    saveSettings();
   });
   $("seed-clear").addEventListener("click", () => {
     $("seed").value = "";
     syncDataBlock();
+    saveSettings();
   });
   $("generate-btn").addEventListener("click", generate);
   $("refresh-btn").addEventListener("click", () => loadGallery().catch(() => toast("刷新失败", true)));
 }
 
+/* ---------- 模式切换与图生图参考图 ---------- */
+
+/* 切换文生图/图生图（按钮点击与整页拖图共用） */
+function switchMode(id) {
+  if (state.mode === id) return;
+  state.mode = id;
+  document.querySelectorAll("#mode-group button").forEach((x) => {
+    const on = x.dataset.id === state.mode;
+    x.setAttribute("aria-pressed", String(on));
+    x.className = aspectClass(on);
+  });
+  applyModeUI();
+  saveSettings();
+}
+
+const I2I_MAX_EDGE = 1536; // 参考图最长边上限（控制请求体积；服务端还会按比例裁缩）
+
+function renderMode() {
+  const group = $("mode-group");
+  group.innerHTML = "";
+  [["t2i", "文生图"], ["i2i", "图生图"]].forEach(([id, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.dataset.id = id;
+    b.setAttribute("aria-pressed", String(id === state.mode));
+    b.className = aspectClass(id === state.mode);
+    b.addEventListener("click", () => switchMode(id));
+    group.appendChild(b);
+  });
+  applyModeUI();
+}
+
+/* 图生图面板显隐 + 生成按钮文案 */
+function applyModeUI() {
+  const i2i = state.mode === "i2i";
+  $("i2i-panel").classList.toggle("hidden", !i2i);
+  $("generate-btn").innerHTML =
+    i2i ? "重绘 <span class=\"font-mono\">▸</span>" : "生成 <span class=\"font-mono\">▸</span>";
+}
+
+function setInitImage(b64, thumb) {
+  state.initImage = b64 || null;
+  state.initThumb = thumb || null;
+  $("i2i-thumb").src = thumb || "";
+  $("i2i-thumb").classList.toggle("hidden", !thumb);
+  $("i2i-plus").classList.toggle("hidden", !!thumb);
+  $("i2i-remove").classList.toggle("hidden", !thumb);
+  saveSettings();
+}
+
+/* 读参考图：canvas 限制最长边后转 JPEG base64（服务端再按比例中心裁缩） */
+function readInitImage(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    const scale = Math.min(1, I2I_MAX_EDGE / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; // 透明 PNG 转 JPEG 时避免黑底
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    setInitImage(dataUrl.split(",")[1], dataUrl);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast("图片读取失败", true); };
+  img.src = url;
+}
+
 /* ---------- LoRA（管理界面在「模型」页） ---------- */
 
 const LORA_RANGE_MAX = 2;
+const LORA_DEFAULT_WEIGHT = 0.4; // 与后端 pipeline.DEFAULT_LORA_WEIGHT 保持一致
 
 function renderLoras(loras) {
-  state.loras = loras.map((l) => ({ ...l, on: !!l.loaded, weight: 1.0, busy: false }));
+  state.loras = loras.map((l) => {
+    const w = Number(savedSettings.loraWeights?.[l.id]);
+    return { ...l, on: !!l.loaded, // 存档越界/缺失时回默认强度
+      weight: Number.isFinite(w) ? Math.min(LORA_RANGE_MAX, Math.max(0, w)) : LORA_DEFAULT_WEIGHT,
+      busy: false };
+  });
   const grid = $("lora-grid");
   grid.innerHTML = "";
   $("lora-empty").classList.toggle("hidden", loras.length > 0);
@@ -370,9 +530,9 @@ function renderLoras(loras) {
           <div class="text-sm truncate" title="${escapeAttr(lora.name)}">${escapeHTML(lora.name)}</div>
           <div class="text-xs font-mono text-muted truncate">${escapeHTML(lora.filename)} · ${lora.size_mb} MB</div>
         </div>
-        <div class="font-mono text-sm w-10 text-right text-muted" data-wval="${i}">1.00</div>
+        <div class="font-mono text-sm w-10 text-right text-muted" data-wval="${i}">${lora.weight.toFixed(2)}</div>
       </div>
-      <input type="range" data-weight="${i}" min="0" max="${LORA_RANGE_MAX}" step="0.05" value="1.0"
+      <input type="range" data-weight="${i}" min="0" max="${LORA_RANGE_MAX}" step="0.05" value="${lora.weight}"
         aria-label="${escapeAttr(lora.name)} 强度" class="w-full mt-3" disabled>`;
     card.querySelector(`[data-toggle="${i}"]`).addEventListener("click", () => toggleLora(i));
     card.querySelector(`[data-weight="${i}"]`).addEventListener("input", (e) => {
@@ -464,7 +624,8 @@ const activeLoras = () =>
 /* FastAPI 校验错误（422 detail 数组）转可读中文 */
 const FIELD_NAMES = {
   prompt: "提示词", style: "风格", aspect: "比例", steps: "步数",
-  seed: "种子", batch: "批量", loras: "LoRA", weight: "强度",
+  seed: "种子", batch: "批量", rounds: "次数", strength: "重绘幅度",
+  init_image: "参考图", loras: "LoRA", weight: "强度",
 };
 
 function friendlyApiError(err) {
@@ -519,6 +680,7 @@ async function generate() {
   const prompt = $("prompt").value.trim();
   if (!prompt) { toast("请先输入提示词", true); return; }
   if (prompt.length > 4000) { toast("提示词超过 4000 字，请精简", true); return; }
+  if (state.mode === "i2i" && !state.initImage) { toast("图生图模式请先上传参考图", true); return; }
   if (state.generating) return;
 
   const seedRaw = $("seed").value.trim();
@@ -528,6 +690,7 @@ async function generate() {
     if (String(seed) !== seedRaw.replace(/^0+(?=\d)/, "")) {
       $("seed").value = seed; // 超限/非法输入自动收敛回填
       syncDataBlock();
+      saveSettings();
       toast("种子已收敛到有效范围", true);
     }
   }
@@ -537,7 +700,11 @@ async function generate() {
     aspect: state.aspect,
     steps: Number($("steps").value),
     seed,
-    batch: state.batch,
+    batch: Number($("batch").value),
+    rounds: Number($("rounds").value),
+    ...(state.mode === "i2i" && state.initImage
+      ? { init_image: state.initImage, strength: Number($("strength").value) }
+      : {}),
     loras: activeLoras(),
   };
 
@@ -559,8 +726,19 @@ async function generate() {
   }
 
   state.currentTask = data.task_id;
+  state.shownTaskImages = 0;
   setGenerating(true);
   pollTask(data.task_id);
+}
+
+/* 把 task.images 里尚未进画廊的部分插进去（次数模式每轮出图即上屏） */
+function showTaskImages(task) {
+  const fresh = (task.images || []).slice(state.shownTaskImages);
+  if (!fresh.length) return;
+  state.shownTaskImages = task.images.length;
+  state.images.unshift(...fresh);
+  insertCards(fresh);
+  $("gallery-count").textContent = String(state.images.length);
 }
 
 function pollTask(taskId) {
@@ -577,22 +755,27 @@ function pollTask(taskId) {
       setGenerating(false);
       return;
     }
-    if (task.state === "queued") return;
+    if (task.state === "queued") {
+      // 排队：前面的任务未完，或模型加载中（就绪后 worker 自动开跑）
+      setProgress(0, task.total_steps || 1, "排队中，模型就绪后自动开始");
+      return;
+    }
     if (task.state === "running") {
       const total = task.total_steps || 1;
-      setProgress(task.step, total, `扩散中 ${task.step}/${total}`);
+      const roundText = (task.rounds || 1) > 1
+        ? `第 ${task.round}/${task.rounds} 轮 · ` : "";
+      setProgress(task.step, total, `${roundText}扩散中 ${task.step}/${total}`);
+      showTaskImages(task);
       return;
     }
     clearInterval(state.pollTimer);
+    showTaskImages(task); // 失败前已出的图也保留
     if (task.state === "error") {
       toast(`生成失败：${task.error}`, true);
       setGenerating(false);
       return;
     }
     setProgress(task.total_steps, task.total_steps, "完成");
-    state.images.unshift(...task.images);
-    insertCards(task.images);
-    $("gallery-count").textContent = String(state.images.length);
     setTimeout(() => setGenerating(false), 400);
   }, 500);
 }
@@ -723,6 +906,8 @@ function openLightbox(id) {
     ["尺寸", img.width ? `${img.width}×${img.height}` : "—"],
     ["步数", img.steps || "—"],
     ["种子", seedText],
+    ...((img.rounds || 1) > 1 ? [["次数", `${img.rounds} 轮 · 每轮 ${img.batch || 1} 张`]] : []),
+    ...(img.strength != null ? [["重绘幅度", Number(img.strength).toFixed(2)]] : []),
     ...(loraText ? [["LoRA", loraText]] : []),
     ["时间", img.created_at ? fmtTime(img.created_at) : "—"],
     ["模型", img.model || "Krea 2 Turbo"],
@@ -784,6 +969,17 @@ async function init() {
   bindNav();
   bindModel();
   bindLightbox();
+  // 恢复上次的面板调整（风格/比例/参数在 renderPresets 里对列表校验后生效）
+  $("prompt").value = savedSettings.prompt ?? "";
+  state.style = savedSettings.style || "none";
+  state.aspect = savedSettings.aspect || "1:1";
+  state.mode = savedSettings.mode === "i2i" ? "i2i" : "t2i";
+  $("strength").value = savedSettings.strength ?? 0.6;
+  $("strength-val").textContent = Number($("strength").value).toFixed(2);
+  if (["bf16", "int8", "int4"].includes(savedSettings.precision)) {
+    state.selectedPrecision = savedSettings.precision;
+  }
+  renderMode();
   // 点击 toast：复制文本并关闭（错误信息不再"闪太快没复制到"）
   $("toast").addEventListener("click", async () => {
     const el = $("toast");

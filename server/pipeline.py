@@ -1,6 +1,7 @@
 """Krea 2 Turbo 管线：模型加载/卸载/精度切换 + 单线程生成 worker + LoRA 常驻管理。
 
-- 模型在后台线程加载；加载过的 LoRA 常驻显存，只在模型页手动卸载
+- 模型在后台线程加载；加载完成后 loras 目录的 LoRA 默认全部装为常驻
+  adapter（强度默认 0.4），只在模型页手动卸载
 - 生成请求进入单线程队列（GPU 一次只跑一个任务，避免显存争抢）
 - 任务状态存 TASKS，前端轮询 /api/tasks/{id}
 """
@@ -17,6 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from .presets import DEFAULT_STEPS, get_aspect, get_style
@@ -63,6 +65,9 @@ class GenRequest:
     steps: int
     seed: int | None
     batch: int
+    rounds: int = 1  # 跑几轮：每轮独立管线调用（batch 张/轮），种子逐轮 +1
+    init_image: str | None = None  # base64 参考图（有值 = 图生图重绘）
+    strength: float = 0.6  # 重绘幅度 0-1：越大越偏离原图
     loras: list[tuple[str, float]] = field(default_factory=list)  # (lora_id, weight)
     created_at: float = field(default_factory=time.time)
 
@@ -149,7 +154,7 @@ def _unload_locked() -> None:
 
 
 def load_model(precision: str) -> None:
-    """按指定精度加载模型（调方应放到后台线程）。"""
+    """按指定精度加载模型，随后全量常驻加载 LoRA（调方应放到后台线程）。"""
     global _pipe
     with _model_lock:
         if MODEL_STATE["state"] == "loading":
@@ -161,6 +166,7 @@ def load_model(precision: str) -> None:
             _pipe = _build_pipe(precision)
             gc.collect()
             _malloc_trim()
+            _load_all_loras_locked()  # LoRA 默认全量常驻（详见 _load_all_loras_locked）
             if precision == "bf16":
                 detail = "bf16 · offload 模式（按需进出显存）"
             else:
@@ -192,6 +198,9 @@ def get_precision_hints() -> dict:
 
 _lora_files: dict[str, Path] = {}  # lora_id -> 文件路径（id = sha1(文件名)[:8]）
 _loaded_adapters: dict[str, str] = {}  # lora_id -> adapter_name（常驻，手动卸载才移除）
+
+# LoRA 默认强度：全量常驻加载时统一 0.4（前端滑杆初始值与此一致）
+DEFAULT_LORA_WEIGHT = 0.4
 
 
 def _lora_display_name(path: Path) -> str:
@@ -250,6 +259,19 @@ def _load_lora(lora_id: str) -> None:
     logger.info("lora loaded: %s (%s)", path.name, lora_id)
 
 
+def _load_all_loras_locked() -> None:
+    """模型加载完成后把 loras 目录的 LoRA 全部装为常驻 adapter。
+    单个失败只告警不阻断模型加载；调用方持有 _model_lock。"""
+    list_loras()  # 刷新 _lora_files
+    for lid, path in list(_lora_files.items()):
+        if lid in _loaded_adapters:
+            continue
+        try:
+            _load_lora(lid)
+        except Exception as exc:  # noqa: BLE001 - 单个 LoRA 损坏不影响其余
+            logger.warning("lora auto-load failed: %s - %s", path.name, exc)
+
+
 def toggle_lora(lora_id: str, on: bool) -> dict:
     """模型页的加载/卸载开关：加载过的常驻，只有这里手动卸载。"""
     with _model_lock:
@@ -281,17 +303,86 @@ def sync_loras(requested: list[tuple[str, float]]) -> None:
             _pipe.disable_lora()  # 本次不用 LoRA：全部去激活（权重保留）
 
 
+# ---------------------------------------------------------------- SDEdit 图生图（重绘）
+
+def _decode_image_b64(b64: str):
+    """接受裸 base64 或 data URL，返回 RGB PIL Image；非法输入抛异常。"""
+    import base64
+    import io
+
+    from PIL import Image
+    if b64.startswith("data:"):
+        b64 = b64.split(",", 1)[-1]
+    img = Image.open(io.BytesIO(base64.b64decode(b64, validate=True)))
+    return img.convert("RGB")
+
+
+def _prepare_init_tensor(img, width: int, height: int) -> torch.Tensor:
+    """参考图中心裁剪到目标比例、缩放到目标尺寸（均为 16 的倍数对齐），
+    返回 (1,3,1,H,W)、[-1,1] 的 bf16 张量。"""
+    import numpy as np
+
+    from PIL import Image
+    scale = max(width / img.width, height / img.height)
+    nw, nh = round(img.width * scale), round(img.height * scale)
+    img = img.resize((nw, nh), Image.LANCZOS)
+    left, top = (nw - width) // 2, (nh - height) // 2
+    img = img.crop((left, top, left + width, top + height))
+    arr = torch.from_numpy(np.asarray(img).copy()).permute(2, 0, 1)[None, :, None]
+    return arr.to(torch.bfloat16) / 127.5 - 1.0
+
+
+@torch.no_grad()
+def _encode_init_latents(b64: str, width: int, height: int, batch: int) -> torch.Tensor:
+    """参考图 → 模型空间的初始潜变量（已 pack、未加噪）(batch, seq, ch*p*p)。
+    编码约定与 QwenImage 官方管线一致：z.mode() 后 (z - mean) / std。
+    必须 no_grad：否则 Wan VAE 编码的激活图全被 autograd 扣住直接 OOM。
+    调用方持有 _model_lock。"""
+    x = _prepare_init_tensor(_decode_image_b64(b64), width, height).to(_pipe._execution_device)
+    vae = _pipe.vae
+    z = vae.encode(x).latent_dist.mode()  # (1, z_dim, 1, h, w)，取确定性 mode
+    mean = torch.tensor(vae.config.latents_mean, device=z.device, dtype=z.dtype).view(1, -1, 1, 1, 1)
+    std = torch.tensor(vae.config.latents_std, device=z.device, dtype=z.dtype).view(1, -1, 1, 1, 1)
+    x0 = ((z - mean) / std)[:, :, 0]  # 去时间维 → (1, ch, h, w)
+    lh, lw = height // _pipe.vae_scale_factor, width // _pipe.vae_scale_factor
+    ch = _pipe.transformer.config.in_channels // (_pipe.patch_size ** 2)
+    packed = _pipe._pack_latents(x0, 1, ch, lh, lw)
+    return packed.expand(batch, -1, -1)
+
+
+def _img2img_schedule(steps: int, strength: float) -> tuple[list[float], int]:
+    """SDEdit 截断：按幅度跳过前段 sigma，返回 (原始线性 sigmas, 实际去噪步数)。"""
+    actual = max(1, round(steps * (1.0 - strength)))
+    raw = np.linspace(1.0, 1.0 / steps, steps)[steps - actual:].tolist()
+    return raw, actual
+
+
+def _dynamic_shift_mu(seq_len: int) -> float:
+    """非蒸馏权重的分辨率感知 shift（与管线 calculate_shift 一致）；蒸馏权重固定 1.15。"""
+    cfg = _pipe.scheduler.config
+    base_seq = cfg.get("base_image_seq_len", 256)
+    max_seq = cfg.get("max_image_seq_len", 6400)
+    base_shift = cfg.get("base_shift", 0.5)
+    max_shift = cfg.get("max_shift", 1.15)
+    return base_shift + (max_shift - base_shift) * (seq_len - base_seq) / (max_seq - base_seq)
+
+
 # ---------------------------------------------------------------- 生成任务
 
 def _new_task(req: GenRequest) -> dict:
     style = get_style(req.style_id)
     aspect = get_aspect(req.aspect_id)
     all_loras = {l["id"]: l for l in list_loras()}
+    is_i2i = bool(req.init_image)
+    # 重绘按幅度跳过前段 sigma，每轮实际去噪步数变少（进度条按真实步数计）
+    steps_per_round = _img2img_schedule(req.steps, req.strength)[1] if is_i2i else req.steps
     return {
         "task_id": req.task_id,
         "state": "queued",
         "step": 0,
-        "total_steps": req.steps,
+        "total_steps": steps_per_round * req.rounds,
+        "rounds": req.rounds,
+        "round": 0,
         "error": None,
         "images": [],
         "request": {
@@ -304,6 +395,9 @@ def _new_task(req: GenRequest) -> dict:
             "steps": req.steps,
             "seed": req.seed,
             "batch": req.batch,
+            "rounds": req.rounds,
+            "img2img": is_i2i,
+            "strength": req.strength if is_i2i else None,
             "loras": [
                 {"id": lid, "name": all_loras[lid]["name"], "weight": weight}
                 for lid, weight in req.loras if lid in all_loras
@@ -336,6 +430,10 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
         "height": task["request"]["height"],
         "steps": task["request"]["steps"],
         "seed": seed,
+        "batch": task["request"]["batch"],
+        "rounds": task["request"]["rounds"],
+        **({"strength": task["request"]["strength"]}
+           if task["request"]["img2img"] else {}),
         "loras": task["request"]["loras"],
         "created_at": int(time.time()),
         "model": "Krea 2 Turbo",
@@ -343,8 +441,11 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
     (OUTPUT_DIR / f"{stem}.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    return {"id": stem, "url": f"/outputs/{stem}.jpg", **{k: meta[k] for k in
-            ("prompt", "style_name", "width", "height", "steps", "seed", "loras", "created_at")}}
+    keys = ("prompt", "style_name", "width", "height", "steps", "seed",
+            "batch", "rounds", "loras", "created_at")
+    if task["request"]["img2img"]:
+        keys += ("strength",)
+    return {"id": stem, "url": f"/outputs/{stem}.jpg", **{k: meta[k] for k in keys}}
 
 
 def _run_task(req: GenRequest) -> None:
@@ -361,27 +462,57 @@ def _run_task(req: GenRequest) -> None:
         # 缺的 LoRA 自动补加载（常驻，不卸载）；无请求时全部去激活
         sync_loras(req.loras)
 
-        seed = req.seed if req.seed is not None else torch.randint(
+        base_seed = req.seed if req.seed is not None else torch.randint(
             0, 2**31 - 1, (1,)).item()
-        task["request"]["seed"] = seed
+        task["request"]["seed"] = base_seed
 
-        def on_step(pipeline, step_index, timestep, kwargs):
-            task["step"] = step_index + 1
-            return kwargs
+        # SDEdit 重绘：参考图编码一次，整轮任务共用（各轮/各张只换噪声）
+        init_latents = None
+        if req.init_image:
+            init_latents = _encode_init_latents(
+                req.init_image, task["request"]["width"],
+                task["request"]["height"], req.batch)
 
-        generator = torch.Generator(device="cuda").manual_seed(seed)
-        result = _pipe(
-            prompt=full_prompt,
-            width=task["request"]["width"],
-            height=task["request"]["height"],
-            num_inference_steps=req.steps,
-            guidance_scale=0.0,  # 蒸馏模型：CFG 关闭，负面提示词无效
-            num_images_per_prompt=req.batch,
-            generator=generator,
-            callback_on_step_end=on_step,
-        )
-        for i, image in enumerate(result.images):
-            task["images"].append(_save_image(image, task, seed, i))
+        # 每轮独立调用管线（每轮 batch 张、独立种子 = 基种子 + 轮号），
+        # 图片逐轮落盘并追加进 task，前端可边跑边看
+        for round_idx in range(req.rounds):
+            seed = base_seed + round_idx
+            task["round"] = round_idx + 1
+
+            generator = torch.Generator(device="cuda").manual_seed(seed)
+            steps_this = req.steps
+            extra = {}
+            if init_latents is not None:
+                # 截断 sigma 表并按幅度加噪；蒸馏权重 shift 固定 mu=1.15
+                raw_sigmas, steps_this = _img2img_schedule(req.steps, req.strength)
+                mu = 1.15 if _pipe.config.is_distilled else _dynamic_shift_mu(init_latents.shape[1])
+                _pipe.scheduler.set_timesteps(sigmas=raw_sigmas, device="cuda", mu=mu)
+                sigma0 = float(_pipe.scheduler.sigmas[0])
+                noise = torch.randn(init_latents.shape, generator=generator,
+                                    device=init_latents.device, dtype=init_latents.dtype)
+                extra = {
+                    "latents": sigma0 * noise + (1.0 - sigma0) * init_latents,
+                    "sigmas": raw_sigmas,
+                }
+
+            def on_step(pipeline, step_index, timestep, kwargs):
+                task["step"] = round_idx * steps_this + step_index + 1
+                return kwargs
+
+            result = _pipe(
+                prompt=full_prompt,
+                width=task["request"]["width"],
+                height=task["request"]["height"],
+                num_inference_steps=steps_this,
+                guidance_scale=0.0,  # 蒸馏模型：CFG 关闭，负面提示词无效
+                num_images_per_prompt=req.batch,
+                generator=generator,
+                callback_on_step_end=on_step,
+                **extra,
+            )
+            for i, image in enumerate(result.images):
+                task["images"].append(
+                    _save_image(image, task, seed, round_idx * req.batch + i))
         task["state"] = "done"
     except Exception as exc:  # noqa: BLE001 - 生成失败细节透出给前端
         logger.exception("generation failed")
@@ -396,11 +527,16 @@ def _run_task(req: GenRequest) -> None:
 def _worker() -> None:
     while True:
         req = _gen_queue.get()
+        task = TASKS.get(req.task_id)
+        if task is None:
+            continue
+        # 模型加载中：原地等就绪（加载期间提交的任务自动排队，不拒绝）
+        while MODEL_STATE["state"] == "loading":
+            time.sleep(0.5)
         if MODEL_STATE["state"] != "ready" or _pipe is None:
-            task = TASKS.get(req.task_id)
-            if task:
-                task["state"] = "error"
-                task["error"] = "模型未加载，请先在「模型」页加载"
+            task["state"] = "error"
+            task["error"] = f"模型未就绪：{MODEL_STATE.get('detail') or '未加载'}"
+            task["finished_at"] = time.time()
             continue
         _run_task(req)
 
@@ -413,7 +549,8 @@ def start_background() -> None:
 
 
 def enqueue(prompt: str, style_id: str, aspect_id: str, steps: int,
-            seed: int | None, batch: int,
+            seed: int | None, batch: int, rounds: int = 1,
+            init_image: str | None = None, strength: float = 0.6,
             loras: list[tuple[str, float]] | None = None) -> str:
     req = GenRequest(
         task_id=uuid.uuid4().hex[:12],
@@ -423,6 +560,9 @@ def enqueue(prompt: str, style_id: str, aspect_id: str, steps: int,
         steps=steps,
         seed=seed,
         batch=batch,
+        rounds=rounds,
+        init_image=init_image,
+        strength=strength,
         loras=loras or [],
     )
     with _lock:

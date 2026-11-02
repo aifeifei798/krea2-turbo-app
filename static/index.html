@@ -32,6 +32,36 @@
     <!-- 左：控制面板 -->
     <section aria-label="生成控制" class="min-h-0 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-border p-4 md:p-5 flex flex-col gap-5">
 
+      <!-- 模式 -->
+      <div>
+        <span class="block text-xs font-mono text-muted mb-2">模式 MODE</span>
+        <div id="mode-group" class="grid grid-cols-2 gap-1" role="group" aria-label="生成模式">
+          <!-- JS 填充 -->
+        </div>
+      </div>
+
+      <!-- 图生图：参考图 + 重绘幅度（仅图生图模式显示） -->
+      <div id="i2i-panel" class="hidden">
+        <div class="flex items-start gap-2.5">
+          <div id="i2i-drop" role="button" tabindex="0" aria-label="上传参考图，点击选择或拖入图片"
+            class="relative shrink-0 w-20 h-20 rounded-md border border-dashed border-border bg-panel-2 flex items-center justify-center cursor-pointer hover:border-accent transition-colors overflow-hidden">
+            <img id="i2i-thumb" class="hidden w-full h-full object-cover" alt="参考图预览">
+            <span id="i2i-plus" aria-hidden="true" class="text-muted text-xl leading-none">+</span>
+            <button id="i2i-remove" type="button" aria-label="移除参考图"
+              class="hidden absolute top-1 right-1 w-5 h-5 items-center justify-center rounded-sm border border-border bg-paper/90 text-muted hover:text-danger hover:border-danger transition-colors text-xs">×</button>
+          </div>
+          <div class="flex-1 min-w-0">
+            <label for="strength" class="block text-xs font-mono text-muted mb-2">重绘幅度 STRENGTH</label>
+            <input id="strength" type="range" min="0.05" max="0.95" step="0.05" value="0.6" class="w-full mt-2.5 accent-accent">
+            <div class="flex items-center justify-between mt-1">
+              <span class="text-xs text-muted">幅度越大改动越大</span>
+              <span id="strength-val" class="text-xs font-mono text-ink">0.60</span>
+            </div>
+          </div>
+        </div>
+        <input id="i2i-file" type="file" accept="image/*" class="hidden">
+      </div>
+
       <!-- 提示词 -->
       <div>
         <label for="prompt" class="block text-xs font-mono text-muted mb-2">提示词 PROMPT</label>
@@ -55,16 +85,40 @@
         </div>
       </div>
 
-      <!-- 步数 / 批量 -->
-      <div class="grid grid-cols-2 gap-4">
+      <!-- 步数 / 批量 / 次数 -->
+      <div class="grid grid-cols-3 gap-4">
         <div>
           <label for="steps" class="block text-xs font-mono text-muted mb-2">步数 STEPS</label>
           <input id="steps" type="range" min="4" max="16" step="1" value="8" class="w-full mt-2.5 accent-accent">
         </div>
         <div>
-          <span class="block text-xs font-mono text-muted mb-2">批量 BATCH</span>
-          <div id="batch-group" class="grid grid-cols-4 gap-1" role="group" aria-label="一次生成张数">
-            <!-- JS 填充 -->
+          <label for="batch" class="block text-xs font-mono text-muted mb-2">批量 BATCH</label>
+          <div class="relative">
+            <select id="batch" aria-label="每轮生成张数"
+              class="w-full appearance-none bg-panel border border-border rounded-md pl-2.5 pr-6 py-1.5 text-xs font-mono text-ink focus:border-accent cursor-pointer">
+              <option value="1">1 张</option>
+              <option value="2">2 张</option>
+              <option value="3">3 张</option>
+              <option value="4">4 张</option>
+            </select>
+            <span aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted text-xs">▾</span>
+          </div>
+        </div>
+        <div>
+          <label for="rounds" class="block text-xs font-mono text-muted mb-2" title="每轮独立跑一次生成（每轮出批量张），每轮种子不同，图片逐轮进画廊">次数 ROUNDS</label>
+          <div class="relative">
+            <select id="rounds" aria-label="重复生成次数"
+              class="w-full appearance-none bg-panel border border-border rounded-md pl-2.5 pr-6 py-1.5 text-xs font-mono text-ink focus:border-accent cursor-pointer">
+              <option value="1">1 次</option>
+              <option value="2">2 次</option>
+              <option value="3">3 次</option>
+              <option value="4">4 次</option>
+              <option value="5">5 次</option>
+              <option value="6">6 次</option>
+              <option value="7">7 次</option>
+              <option value="8">8 次</option>
+            </select>
+            <span aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted text-xs">▾</span>
           </div>
         </div>
       </div>

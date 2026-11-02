@@ -29,6 +29,7 @@ ASPECTS = [
 DEFAULT_STEPS = 8          # 蒸馏版推荐步数
 MAX_STEPS = 16             # 超过收益很低
 MAX_BATCH = 4
+MAX_ROUNDS = 8             # 「次数」：每轮独立跑一次管线（每轮 batch 张）
 
 
 def get_style(style_id: str) -> dict:

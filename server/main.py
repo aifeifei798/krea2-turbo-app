@@ -4,6 +4,7 @@
 """
 
 import json
+import logging
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +15,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import pipeline
-from .presets import ASPECTS, DEFAULT_STEPS, MAX_BATCH, MAX_STEPS, STYLES
+
+# pipeline 的 INFO（模型加载/LoRA 装载/状态迁移）落到 .server.log，便于排查卡顿
+logging.basicConfig(level=logging.INFO)
+from .presets import ASPECTS, DEFAULT_STEPS, MAX_BATCH, MAX_ROUNDS, MAX_STEPS, STYLES
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -30,9 +34,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Krea 2 Turbo 工作台", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def revalidate_static(request, call_next):
+    """前端资源一律 no-cache 协商缓存：改完刷新即生效，杜绝旧 CSS/JS 撞新 HTML。"""
+    resp = await call_next(request)
+    p = request.url.path
+    if not (p.startswith("/api") or p.startswith("/outputs")):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 class LoraIn(BaseModel):
     id: str
-    weight: float = Field(default=1.0, ge=0.0, le=2.0)
+    weight: float = Field(default=pipeline.DEFAULT_LORA_WEIGHT, ge=0.0, le=2.0)
 
 
 class GenerateIn(BaseModel):
@@ -42,6 +56,9 @@ class GenerateIn(BaseModel):
     steps: int = Field(default=DEFAULT_STEPS, ge=2, le=MAX_STEPS)
     seed: int | None = Field(default=None, ge=0, le=2**63 - 1)  # torch.Generator 上限
     batch: int = Field(default=1, ge=1, le=MAX_BATCH)
+    rounds: int = Field(default=1, ge=1, le=MAX_ROUNDS)
+    init_image: str | None = Field(default=None, max_length=8_000_000)  # base64 参考图（重绘）
+    strength: float = Field(default=0.6, ge=0.05, le=0.95)  # 重绘幅度
     loras: list[LoraIn] = Field(default_factory=list, max_length=8)
 
 
@@ -105,8 +122,7 @@ def lora_toggle(body: LoraToggleIn):
 @app.post("/api/generate")
 def generate(body: GenerateIn):
     state = pipeline.get_model_state()
-    if state["state"] == "loading":
-        raise HTTPException(503, "模型加载中，请稍候")
+    # loading 状态不拒绝：任务入队，worker 等模型就绪后自动开跑
     if state["state"] == "unloaded":
         raise HTTPException(503, "模型未加载，请到「模型」页加载")
     if state["state"] == "error":
@@ -116,9 +132,16 @@ def generate(body: GenerateIn):
     for lora in body.loras:
         if lora.id not in known:
             raise HTTPException(400, f"未知 LoRA: {lora.id}")
+    # 参考图必须是可解码的有效图片
+    if body.init_image is not None:
+        try:
+            pipeline._decode_image_b64(body.init_image)
+        except Exception:  # noqa: BLE001 - 解码失败统一回 400
+            raise HTTPException(400, "参考图不是有效的图片数据") from None
     task_id = pipeline.enqueue(
         prompt=body.prompt, style_id=body.style, aspect_id=body.aspect,
-        steps=body.steps, seed=body.seed, batch=body.batch,
+        steps=body.steps, seed=body.seed, batch=body.batch, rounds=body.rounds,
+        init_image=body.init_image, strength=body.strength,
         loras=[(l.id, l.weight) for l in body.loras])
     return {"task_id": task_id}
 
