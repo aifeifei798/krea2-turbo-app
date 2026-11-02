@@ -31,12 +31,12 @@ LORA_DIR = MODEL_PATH / "loras"
 OUTPUT_DIR = BASE_DIR / "outputs"
 
 _PRECISIONS = ("bf16", "int8", "int4")
-# 启动精度可用环境变量指定：KREA_PRECISION=bf16|int8|int4（server.sh 传入）
-DEFAULT_PRECISION = os.environ.get("KREA_PRECISION", "bf16").strip().lower()
+# 启动精度可用环境变量指定：KREA_PRECISION=bf16|int8|int4（server.sh 传入），默认 int8
+DEFAULT_PRECISION = os.environ.get("KREA_PRECISION", "int8").strip().lower()
 if DEFAULT_PRECISION not in _PRECISIONS:
-    logger.warning("KREA_PRECISION=%s 无效，回退 bf16（可选 %s）",
+    logger.warning("KREA_PRECISION=%s 无效，回退 int8（可选 %s）",
                    DEFAULT_PRECISION, "/".join(_PRECISIONS))
-    DEFAULT_PRECISION = "bf16"
+    DEFAULT_PRECISION = "int8"
 PRECISION_HINTS = {
     "bf16": "全精度 · offload 模式，权重需 ~58GB 磁盘换页缓冲（RAM 紧张慎用），画质无损",
     "int8": "transformer+编码器 torchao int8 · 全 GPU 常驻 ~16.7 GiB，出图约快 3 倍",
@@ -260,7 +260,8 @@ def _load_lora(lora_id: str) -> None:
 
 
 def _load_all_loras_locked() -> None:
-    """模型加载完成后把 loras 目录的 LoRA 全部装为常驻 adapter。
+    """模型加载完成后把 loras 目录的 LoRA 全部装为常驻 adapter，
+    并统一按 DEFAULT_LORA_WEIGHT（0.4）激活（生成请求会按前端权重重设）。
     单个失败只告警不阻断模型加载；调用方持有 _model_lock。"""
     list_loras()  # 刷新 _lora_files
     for lid, path in list(_lora_files.items()):
@@ -270,6 +271,12 @@ def _load_all_loras_locked() -> None:
             _load_lora(lid)
         except Exception as exc:  # noqa: BLE001 - 单个 LoRA 损坏不影响其余
             logger.warning("lora auto-load failed: %s - %s", path.name, exc)
+    if _loaded_adapters:
+        _pipe.enable_lora()
+        _pipe.set_adapters(list(_loaded_adapters.values()),
+                           adapter_weights=[DEFAULT_LORA_WEIGHT] * len(_loaded_adapters))
+        logger.info("lora activated: %d adapters @ %.2f",
+                    len(_loaded_adapters), DEFAULT_LORA_WEIGHT)
 
 
 def toggle_lora(lora_id: str, on: bool) -> dict:

@@ -2,12 +2,12 @@
 # Krea 2 Turbo 工作台 启动/管理脚本
 #
 # 用法:
-#   ./server.sh start  [精度] [端口]   后台启动（精度 bf16|int8|int4，端口默认 8420）
+#   ./server.sh start  [精度] [端口]   后台启动（精度 bf16|int8|int4，默认 int8，端口默认 8420）
 #   ./server.sh stop                   停止服务
 #   ./server.sh restart [精度] [端口]  重启（不带精度则沿用上次）
 #   ./server.sh status                 进程 + 模型 + 显存状态
 #   ./server.sh log [行数|-f]          查看日志（默认 50 行，-f 跟随）
-#   ./server.sh run    [精度] [端口]   前台启动（Ctrl+C 停止）
+#   ./server.sh run    [精度] [端口]   前台启动（默认 int8，Ctrl+C 停止）
 #   ./server.sh help                   本说明
 #
 # 兼容旧用法：./server.sh [bf16|int8|int4] 等价于 run。
@@ -62,7 +62,7 @@ valid_precision() { case "$1" in bf16|int8|int4) return 0 ;; *) return 1 ;; esac
 
 do_start() {
   local precision="${1:-}" port="${2:-}" pid portp
-  [ -z "$precision" ] && precision=$(meta_get precision); [ -z "$precision" ] && precision=bf16
+  [ -z "$precision" ] && precision=$(meta_get precision); [ -z "$precision" ] && precision=int8
   [ -z "$port" ] && port=$(meta_get port); [ -z "$port" ] && port=$PORT_DEFAULT
   valid_precision "$precision" || { echo "未知精度: $precision（可选 $PRECISIONS）" >&2; exit 1; }
   case "$port" in ''|*[!0-9]*) echo "非法端口: $port" >&2; exit 1 ;; esac
@@ -146,7 +146,7 @@ do_log() {
 }
 
 do_run() {
-  local precision="${1:-bf16}" port="${2:-$PORT_DEFAULT}" pid
+  local precision="${1:-int8}" port="${2:-$PORT_DEFAULT}" pid
   valid_precision "$precision" || { echo "未知精度: $precision（可选 $PRECISIONS）" >&2; exit 1; }
   [ ! -x .venv/bin/python ] && { echo "未找到 .venv，请先按 README 创建 Python 环境" >&2; exit 1; }
   export KREA_PRECISION="$precision"

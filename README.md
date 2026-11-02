@@ -13,7 +13,7 @@
 - **模型精度可选**（「模型」页，RTX 5090 32GB 实测，量化作用于 transformer 与文本编码器）：
   | 精度 | 显存（常驻/峰值） | 512²/8 步 | 说明 |
   |---|---|---|---|
-  | bf16 | offload 模式（峰值 ~24 GiB） | ~9s | 画质无损，默认 |
+  | bf16 | offload 模式（峰值 ~24 GiB） | ~9s | 画质无损 |
   | int8（torchao int8wo） | ~16.7 / 18.2 GiB | ~3.4s | 全 GPU，速度最快 |
   | int4（bnb nf4） | ~9.9 / 11.4 GiB | ~2.4s | 最省显存，画质略降 |
   精度切换需重载模型（约半分钟）。|
@@ -33,13 +33,13 @@
 ```bash
 chmod +x server.sh
 
-./server.sh start int4     # 后台启动（bf16|int8|int4，端口默认 8420）
+./server.sh start          # 后台启动（默认 int8，也可指定 bf16|int8|int4；端口默认 8420）
 ./server.sh status         # 进程 / 模型 / LoRA / 显存状态
 ./server.sh log -f         # 跟随日志（或 log 30 看最近 30 行）
 ./server.sh restart        # 重启（沿用上次精度；也可带精度参数）
 ./server.sh stop           # 停止
 
-./server.sh run bf16       # 前台运行（Ctrl+C 停止），./server.sh int4 是它的等价写法
+./server.sh run bf16       # 前台运行（默认 int8，Ctrl+C 停止），./server.sh int4 是它的等价写法
 ```
 
 或手动分步：
