@@ -194,7 +194,11 @@ const SEED_MAX = 9007199254740991; // Number.MAX_SAFE_INTEGER，torch 上限之�
 
 export async function generate() {
   const prompt = $("prompt").value.trim();
-  if (!prompt) { toast("请先输入提示词", true); return; }
+  // 通用词会拼在提示词最前，填写了通用词即视为有内容
+  if (!prompt && !(state.commonWords || "").trim()) {
+    toast("请先输入提示词或通用词", true);
+    return;
+  }
   if (prompt.length > 4000) { toast("提示词超过 4000 字，请精简", true); return; }
   if (state.mode === "i2i" && !state.initImage) { toast("图生图模式请先上传参考图", true); return; }
 

@@ -376,24 +376,36 @@
   <div id="lightbox" class="fixed inset-0 z-50 bg-paper/90 hidden" role="dialog" aria-modal="true" aria-label="图片详情">
     <div class="absolute inset-0" data-close></div>
     <div class="relative h-full flex flex-col lg:flex-row items-center justify-center gap-6 p-4 lg:p-10 pointer-events-none">
-      <img id="lb-img" src="" alt="" class="pointer-events-auto max-h-[70vh] lg:max-h-[85vh] max-w-full object-contain rounded-md border border-border">
+      <div class="relative pointer-events-auto w-fit max-w-full flex items-center justify-center">
+        <img id="lb-img" src="" alt="" class="max-h-[70vh] lg:max-h-[85vh] max-w-full object-contain rounded-md border border-border">
+        <button id="lb-prev" type="button" aria-label="上一张" data-lb-prev
+          class="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-panel/85 text-muted text-lg leading-none hover:text-accent hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">‹</button>
+        <button id="lb-next" type="button" aria-label="下一张" data-lb-next
+          class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-panel/85 text-muted text-lg leading-none hover:text-accent hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">›</button>
+      </div>
       <div class="pointer-events-auto w-full lg:w-80 shrink-0 bg-panel border border-border rounded-md p-4 lg:max-h-[85vh] overflow-y-auto">
         <div class="flex items-center mb-3">
           <h2 class="text-xs font-mono text-muted">详情</h2>
           <button id="lb-close" type="button" aria-label="关闭详情"
             class="ml-auto w-7 h-7 rounded-sm border border-border text-muted hover:text-ink hover:border-accent transition-colors">×</button>
         </div>
-        <p id="lb-prompt" class="text-sm leading-relaxed mb-4 break-words"></p>
+        <p id="lb-prompt" class="text-sm leading-relaxed mb-4 break-words whitespace-pre-line"></p>
         <dl id="lb-meta" class="font-mono text-xs text-muted space-y-1.5 mb-5 border-t border-border pt-3">
           <!-- JS 填充参数 -->
         </dl>
         <div class="flex flex-wrap gap-2">
           <a id="lb-download" href="#" download
-            class="flex-1 text-center px-3 py-2 rounded-sm bg-accent text-paper text-sm font-bold hover:opacity-90 transition-opacity">下载</a>
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm bg-accent text-paper text-sm font-bold hover:opacity-90 transition-opacity">下载</a>
           <button id="lb-copy" type="button"
-            class="flex-1 px-3 py-2 rounded-sm border border-border text-sm hover:border-accent transition-colors">复制提示词</button>
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm hover:border-accent transition-colors">复制提示词</button>
           <button id="lb-delete" type="button"
-            class="flex-1 px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors">删除</button>
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors">删除</button>
+        </div>
+        <div class="flex gap-2 mt-2">
+          <button type="button" aria-label="上一张" data-lb-prev
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">← 上一张</button>
+          <button type="button" aria-label="下一张" data-lb-next
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">下一张 →</button>
         </div>
       </div>
     </div>

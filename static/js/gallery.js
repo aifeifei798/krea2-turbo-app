@@ -166,8 +166,22 @@ function openLightbox(id) {
   ].map(([k, v]) => `<div class="flex gap-2"><dt class="shrink-0">${k}</dt><dd class="text-ink truncate" title="${escapeAttr(v)}">${escapeHTML(v)}</dd></div>`).join("");
   $("lb-download").href = img.url;
   $("lb-download").setAttribute("download", `${id}.jpg`);
+  const idx = state.images.findIndex((i) => i.id === lightboxId);
+  const prevEnd = idx <= 0;
+  const nextEnd = idx === -1 || idx >= state.images.length - 1;
+  // 图两侧圆形按钮与下方文字按钮同步置灰
+  document.querySelectorAll("[data-lb-prev]").forEach((b) => (b.disabled = prevEnd));
+  document.querySelectorAll("[data-lb-next]").forEach((b) => (b.disabled = nextEnd));
   $("lightbox").classList.remove("hidden");
   $("lb-close").focus();
+}
+
+/* 灯箱内前后翻页（按钮 + 左右方向键共用） */
+function lightboxNav(delta) {
+  const idx = state.images.findIndex((i) => i.id === lightboxId);
+  if (idx === -1) return;
+  const neighbor = state.images[idx + delta];
+  if (neighbor) openLightbox(neighbor.id);
 }
 
 function closeLightbox() {
@@ -189,11 +203,16 @@ export function bindLightbox() {
   $("lb-close").addEventListener("click", closeLightbox);
   $("lightbox").querySelector("[data-close]").addEventListener("click", closeLightbox);
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !$("lightbox").classList.contains("hidden")) closeLightbox();
+    if ($("lightbox").classList.contains("hidden")) return;
+    if (e.key === "Escape") closeLightbox();
+    else if (e.key === "ArrowLeft") lightboxNav(-1);
+    else if (e.key === "ArrowRight") lightboxNav(1);
   });
+  document.querySelectorAll("[data-lb-prev]").forEach((b) => b.addEventListener("click", () => lightboxNav(-1)));
+  document.querySelectorAll("[data-lb-next]").forEach((b) => b.addEventListener("click", () => lightboxNav(1)));
   $("lb-copy").addEventListener("click", async () => {
     const img = state.images.find((i) => i.id === lightboxId);
-    if (!img?.prompt) return;
+    if (!img?.prompt) { toast("这张图没有提示词可复制", true); return; }
     try {
       await navigator.clipboard.writeText(img.prompt);
       toast("提示词已复制");

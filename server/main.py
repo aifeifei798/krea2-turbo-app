@@ -51,7 +51,7 @@ class LoraIn(BaseModel):
 
 
 class GenerateIn(BaseModel):
-    prompt: str = Field(min_length=1, max_length=4000)
+    prompt: str = Field(default="", max_length=4000)  # 可为空：通用词/角色/风格也能撑起提示词
     styles: list[str] = Field(default_factory=list, max_length=MAX_STYLES)
     role: str | None = None
     common: str = Field(default="", max_length=600)  # 通用词（提示词最前）
@@ -128,6 +128,8 @@ def lora_toggle(body: LoraToggleIn):
 
 @app.post("/api/generate")
 def generate(body: GenerateIn):
+    if not body.prompt.strip() and not body.common.strip():
+        raise HTTPException(400, "提示词与通用词不能同时为空")
     state = pipeline.get_model_state()
     # loading 状态不拒绝：任务入队，worker 等模型就绪后自动开跑
     if state["state"] == "unloaded":
