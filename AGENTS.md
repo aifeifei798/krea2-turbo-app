@@ -7,7 +7,7 @@
 - `server/` — main.py（FastAPI 路由）、pipeline.py（模型加载/单 worker 生成队列/LoRA 常驻）、paths.py（.env 目录配置）、presets.py（比例/风格/角色聚合+用量统计）、style_data.py 与 juese_data.py（**生成文件，勿手改**，由 scripts/port_presets.py 从外部数据转换）
 - `static/js/` — 前端按职责拆分的 9 个 ES 模块（无打包器，`<script type="module">` 直载）
 - `static/css/` — src/app.css 为源，dist/app.css 为构建产物（gitignored）
-- `scripts/` — port_presets.py（预设数据转换）、export_quantized.py（预量化导出）
+- `scripts/` — port_presets.py（预设数据转换）、export_quantized.py（预量化导出）、gen.py（命令行出图）、check_i18n.mjs / check_imports.mjs（静态校验，见下）
 - `install.sh` / `server.sh` — 安装与服务管理；`outputs/` 落盘图片+json 元数据
 
 ## 常用命令
@@ -17,8 +17,12 @@
 node_modules/.bin/tailwindcss -i static/css/src/app.css -o static/css/dist/app.css --minify
 .venv/bin/python -m py_compile server/*.py        # Python 语法检查
 node --check static/js/<file>.js                  # JS 检查（ES module 需复制为 .mjs 再查）
+node scripts/check_i18n.mjs                       # i18n 键完整性（t()/data-i18n vs 语言包，缺键退出码 1）
+node scripts/check_imports.mjs                    # 前端模块导入健康（import 名必须在目标导出里）
 node ~/.zcode/skills/design-forge/scripts/forge.mjs static/index.html static/js/*.js static/css/src/app.css
 ```
+
+改 JS 文案（t()/data-i18n）后跑 check_i18n；改任何 import 后跑 check_imports——这两个都是历史踩坑的固化，交付前必跑。
 
 改前端静态文件刷新即生效（`/api`、`/outputs` 之外的路由都走 no-cache 中间件）；改后端必须 `./server.sh restart`（预量化 int8 冷启动约 35s）。
 
@@ -45,3 +49,17 @@ node ~/.zcode/skills/design-forge/scripts/forge.mjs static/index.html static/js/
 - `.usage.json`（风格用量）、`krea2-panel-v1`/`krea2-combos-v1`（localStorage）是运行时数据；`.env`、`.usage.json`、`.server.*`、`outputs/` 均 gitignored。
 - 预量化目录解析链：`.env` 显式（KREA_MODEL_INT8_DIR/INT4_DIR）→ 同级 `-int8/-int4` 约定 → 现场量化；显式无效自动回退。
 - 根目录 AGENTS.md 与 README.md 是权威文档；改服务管理/安装流程时同步 server.sh 头部注释与 README。
+- 批量替换（python/sed）必须先断言出现次数、替换后复核——静默 no-op 会埋雷（bindTheme 就是这么从 import 里丢的，页面假死「连接中」）。
+- server.sh 头部注释是 awk 提取的帮助文本；编辑头部时替换若把行首 `#` 顶掉，该行会变成裸代码执行（曾引发调自身的 fork 炸弹）。
+- IAB 浏览器 evaluate 不能动态 import 模块（importModule 未定义）——模块级验证走文件比对/服务器端 grep，页面级走 DOM 断言与事件注入。
+- 合成事件的 pointerId 调 `setPointerCapture` 会抛 NotFoundError——画布 handler 里必须 try/catch（主画布与精细弹窗都已处理）。
+- 前后端重复常量以 `/api/presets` 为准（max_styles/max_steps/default_steps），不要在前端再写死；`DEFAULT_LORA_WEIGHT`(0.4) 目前前后端各一份（lora.js / pipeline.py），改要同步。
+
+## 浏览器验证配方（IAB 实测有效）
+
+- **载图**：IAB 不支持 file chooser——`DataTransfer` 构造 File 塞进 `i2i-file`/`inpaint-file` 再 `dispatchEvent(new Event("change", {bubbles:true}))`。
+- **涂抹**：画布上 `dispatchEvent(new PointerEvent(type, {pointerId:任意, pointerType:"mouse", clientX, clientY, isPrimary:true}))`，pointerdown→move×N→up。
+- **笔迹验证**：canvas `getImageData` 统计预览色像素（`r>200 && g<140 && a>60`）。
+- **修图保真**：PIL 对比 outputs 前后图，断言蒙版外变化像素 ≈0（阈值 >2 容 JPEG 落盘噪声）。
+- **捕获提交体**：包一层 `window.fetch` 记录 /api/generate 的 body（页面 reload 后钩子失效，需重挂）。
+- **测试前置**：i18n/主题/密钥存 localStorage（`krea2-lang`/`krea2-theme`/`krea2-api-key`），按需清理。

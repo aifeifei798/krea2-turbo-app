@@ -126,4 +126,5 @@ def get_presets() -> dict:
                    key=lambda r: -r["usage"])
     roles.insert(0, {**_role_map["none"], "usage": 0})
     return {"styles": styles, "roles": roles, "aspects": ASPECTS,
-            "default_steps": DEFAULT_STEPS, "max_steps": MAX_STEPS}
+            "default_steps": DEFAULT_STEPS, "max_steps": MAX_STEPS,
+            "max_styles": MAX_STYLES}

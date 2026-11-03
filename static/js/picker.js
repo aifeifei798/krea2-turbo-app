@@ -3,7 +3,7 @@ import { $, state, toast, escapeAttr } from "./core.js";
 import { t } from "./i18n.js";
 import { saveSettings } from "./settings.js";
 
-export const PICKER_MAX_STYLES = 4; // 与后端 MAX_STYLES 一致
+
 
 /* 摘要按钮：多选高亮显数量，单选高亮显名字，悬停看明细 */
 export function syncStyleSummary() {
@@ -109,8 +109,8 @@ function onPickerChip(id) {
     const i = sel.indexOf(id);
     if (i >= 0) sel.splice(i, 1);
     else {
-      if (sel.length >= PICKER_MAX_STYLES) {
-        toast(t("最多同时选 {n} 个风格", { n: PICKER_MAX_STYLES }), true);
+      if (sel.length >= state.maxStyles) {
+        toast(t("最多同时选 {n} 个风格", { n: state.maxStyles }), true);
         return;
       }
       sel.push(id);
@@ -133,7 +133,7 @@ function updatePickerInfo() {
       .map((id) => state.styles.find((s) => s.id === id)?.name)
       .filter(Boolean);
     $("picker-info").textContent = names.length
-      ? t("已选 {a}/{b}：{s}", { a: names.length, b: PICKER_MAX_STYLES, s: names.join(" · ") })
+      ? t("已选 {a}/{b}：{s}", { a: names.length, b: state.maxStyles, s: names.join(" · ") })
       : t("未选择（无风格）");
   } else {
     const r = state.roles.find((x) => x.id === state.pickerSelected);

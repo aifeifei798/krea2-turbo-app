@@ -13,6 +13,7 @@ export function renderPresets(data) {
   state.roles = data.roles || [];
   state.aspects = data.aspects;
   state.maxSteps = data.max_steps;
+  state.maxStyles = data.max_styles || 4;
   state.defaultSteps = data.default_steps;
   // 恢复上次的调整（存档里的 id 已失效则丢弃）
   state.selectedStyles = state.selectedStyles.filter(

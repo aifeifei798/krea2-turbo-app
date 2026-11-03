@@ -13,6 +13,7 @@ export const state = {
   pickerSelected: null, // 弹窗内的暂选（style: 数组 / role: id）
   aspects: [],
   maxSteps: 16,
+  maxStyles: 4, // 风格多选上限（renderPresets 从 /api/presets 的 max_styles 回填）
   defaultSteps: 8,
   aspect: "1:1",
   mode: "t2i", // t2i 文生图 | i2i 图生图重绘 | inpaint 修图（局部重绘）
