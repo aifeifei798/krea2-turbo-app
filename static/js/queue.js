@@ -48,7 +48,7 @@ function updateQueueRow(taskId, text, pct, running) {
   dot.className = `w-1.5 h-1.5 rounded-full shrink-0 ${running ? "bg-accent pulse-dot" : "bg-muted"}`;
 }
 
-/* 单个任务收尾：摘行、停轮询、收起弹层 */
+/* 单个任务收尾：摘行、停轮询、收起弹层；全部收尾时进度条转「完成 + 重跑」态 */
 function finishTask(taskId) {
   delete state.activeTasks[taskId];
   document.querySelector(`[data-task="${taskId}"]`)?.remove();
@@ -57,8 +57,27 @@ function finishTask(taskId) {
     clearInterval(state.pollTimer);
     state.pollTimer = null;
     closeQueuePop();
-    $("current-progress").classList.add("hidden");
+    updateIdleProgress();
   }
+}
+
+/* 空闲态进度条：有成功过的任务 → 显示完成摘要 + 重跑按钮；否则隐藏 */
+function updateIdleProgress() {
+  const wrap = $("current-progress");
+  const last = state.lastRequest;
+  if (!last) {
+    wrap.classList.add("hidden");
+    $("cp-rerun").classList.add("hidden");
+    return;
+  }
+  wrap.classList.remove("hidden");
+  $("cp-bar").style.transform = "scaleX(1)";
+  $("cp-pct").textContent = "100%";
+  const stylesText = (last.styles || []).map((s) => s.name).join(" · ");
+  $("cp-text").textContent =
+    `已完成：${(last.prompt || "").slice(0, 26)}${stylesText ? ` · ${stylesText}` : ""}`;
+  wrap.setAttribute("aria-valuenow", "100");
+  $("cp-rerun").classList.remove("hidden");
 }
 
 /* 轮询所有活跃任务：各自更新行内进度/上屏图片，终态收尾；并同步按钮下的当前进度条 */
@@ -93,8 +112,12 @@ async function pollActiveTasks() {
       return;
     }
     showTaskImages(task); // 失败/取消前已出的图也保留
-    if (task.state === "error") toast(`生成失败：${task.error}`, true);
-    else if (task.canceled) toast(`已停止，保留了 ${task.images.length} 张已完成的图`);
+    if (task.state === "error") {
+      toast(`生成失败：${task.error}`, true);
+    } else {
+      state.lastRequest = task.request; // 成功（含取消保留部分）即可重跑
+      if (task.canceled) toast(`已停止，保留了 ${task.images.length} 张已完成的图`);
+    }
     finishTask(taskId);
   }));
   updateCurrentProgress(running, queued);
@@ -104,10 +127,11 @@ async function pollActiveTasks() {
 function updateCurrentProgress(running, queued) {
   const wrap = $("current-progress");
   if (!running && !queued) {
-    wrap.classList.add("hidden");
+    updateIdleProgress();
     return;
   }
   wrap.classList.remove("hidden");
+  $("cp-rerun").classList.add("hidden");
   const pct = running ? Math.max(0, Math.min(100, running.pct)) : 0;
   $("cp-bar").style.transform = `scaleX(${pct / 100})`;
   $("cp-pct").textContent = `${Math.round(pct)}%`;
@@ -221,8 +245,47 @@ export async function generate() {
   trackTask(data.task_id, prompt.slice(0, 40));
 }
 
+/* 一键重跑：沿用上次成功任务的全部参数，种子换随机 */
+async function rerunLast() {
+  const last = state.lastRequest;
+  if (!last) return;
+  const body = {
+    prompt: last.prompt,
+    styles: (last.styles || []).map((s) => s.id),
+    role: last.role ? last.role.id : null,
+    common: last.common || "",
+    aspect: last.aspect_id || "1:1",
+    steps: last.steps || 8,
+    seed: null, // 重跑：换随机种子
+    batch: last.batch || 1,
+    rounds: last.rounds || 1,
+    // 参考图不落盘，重绘任务沿用面板当前参考图
+    ...(last.img2img && state.initImage
+      ? { init_image: state.initImage, strength: last.strength ?? 0.6 }
+      : {}),
+    loras: activeLoras(),
+  };
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(friendlyApiError({ ...err, status: res.status }));
+    }
+    const data = await res.json();
+    trackTask(data.task_id, (last.prompt || "").slice(0, 40));
+    toast("已重新提交（新随机种子）");
+  } catch (e) {
+    toast(`重跑失败：${e.message}`, true);
+  }
+}
+
 export function bindQueueUI() {
   $("generate-btn").addEventListener("click", generate);
+  $("cp-rerun").addEventListener("click", rerunLast);
   // 队列弹层：按钮开合、关闭按钮、点外部收起、全部取消
   $("queue-btn").addEventListener("click", () => {
     const pop = $("queue-pop");

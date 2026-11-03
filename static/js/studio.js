@@ -2,6 +2,7 @@
 import { $, state, toast, aspectClass, syncDataBlock } from "./core.js";
 import { savedSettings, saveSettings } from "./settings.js";
 import { syncStyleSummary } from "./picker.js";
+import { syncCommonBadge } from "./common-words.js";
 import { generate } from "./queue.js";
 import { loadGallery } from "./gallery.js";
 
@@ -168,7 +169,11 @@ function setInitImage(b64, thumb) {
 
 /* 读参考图：canvas 限制最长边后转 JPEG base64（服务端再按比例中心裁缩） */
 function readInitImage(file) {
-  const url = URL.createObjectURL(file);
+  readInitImageFromBlob(file);
+}
+
+function readInitImageFromBlob(blob) {
+  const url = URL.createObjectURL(blob);
   const img = new Image();
   img.onload = () => {
     URL.revokeObjectURL(url);
@@ -185,6 +190,37 @@ function readInitImage(file) {
   };
   img.onerror = () => { URL.revokeObjectURL(url); toast("图片读取失败", true); };
   img.src = url;
+}
+
+/* 画廊「用这张重绘」：切图生图 + 历史图作参考图 + 回填当时的提示词/风格/角色 */
+export function reuseAsRedraw(img) {
+  switchMode("i2i");
+  $("prompt").value = img.prompt || "";
+  state.selectedStyles = (img.styles || [])
+    .map((s) => s.id)
+    .filter((id) => state.styles.some((s) => s.id === id));
+  state.selectedRole =
+    img.role && state.roles.some((r) => r.id === img.role.id) ? img.role.id : null;
+  state.commonWords = img.common || "";
+  if (img.aspect_id && state.aspects.some((a) => a.id === img.aspect_id)) {
+    state.aspect = img.aspect_id;
+    $("aspect-group").querySelectorAll("button").forEach((x) => {
+      const on = x.dataset.id === state.aspect;
+      x.setAttribute("aria-pressed", String(on));
+      x.className = aspectClass(on);
+    });
+  }
+  if (img.steps) $("steps").value = Math.min(Number($("steps").max) || 16, img.steps);
+  syncStyleSummary();
+  syncCommonBadge();
+  syncDataBlock();
+  saveSettings();
+  fetch(img.url)
+    .then((r) => r.blob())
+    .then(readInitImageFromBlob)
+    .catch(() => toast("参考图读取失败", true));
+  toast("已带入图生图，调整幅度后重绘");
+  $("prompt").focus();
 }
 
 /* ---------- 示例提示词（来自 Krea 2 官方示例的风格方向） ---------- */

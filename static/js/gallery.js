@@ -3,6 +3,12 @@ import { $, state, toast, fmtTime, escapeHTML, escapeAttr } from "./core.js";
 
 const GALLERY_PAGE = 60; // 与后端 GALLERY_PAGE_DEFAULT 对应
 
+/* 「用这张重绘」回调：由 app 注入（studio.reuseAsRedraw），避免 gallery→studio 循环依赖 */
+let redrawHandler = null;
+export function setRedrawHandler(fn) {
+  redrawHandler = fn;
+}
+
 function cardHTML(img) {
   const seedText = img.seed === null || img.seed === undefined ? "auto" : String(img.seed);
   const stylesText = (img.styles || []).map((s) => s.name).join(" · ")
@@ -20,6 +26,8 @@ function cardHTML(img) {
           <span class="shrink-0">seed ${seedText}</span>
         </div>
       </figcaption>
+      <button type="button" data-redraw="${img.id}" aria-label="用这张图重绘"
+        class="absolute top-2 left-2 hidden group-hover:flex group-focus-within:flex items-center px-1.5 h-7 rounded-sm border border-border bg-paper text-muted hover:text-accent hover:border-accent transition-colors text-xs">重绘</button>
       <button type="button" data-del="${img.id}" aria-label="删除这张图片"
         class="absolute top-2 right-2 hidden group-hover:flex group-focus-within:flex w-7 h-7 items-center justify-center rounded-sm border border-border bg-paper text-muted hover:text-danger hover:border-danger transition-colors text-sm">×</button>
     </figure>`;
@@ -102,6 +110,11 @@ function bindCard(fig) {
   fig.querySelector("[data-del]").addEventListener("click", (e) => {
     e.stopPropagation();
     deleteImage(e.currentTarget.dataset.del);
+  });
+  fig.querySelector("[data-redraw]")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const img = state.images.find((i) => i.id === fig.dataset.id);
+    if (img && redrawHandler) redrawHandler(img);
   });
 }
 

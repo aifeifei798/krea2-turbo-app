@@ -14,13 +14,13 @@
     <svg aria-hidden="true" width="26" height="26" viewBox="0 0 64 64" class="shrink-0">
       <defs>
         <linearGradient id="logo-bolt" x1="0" y1="0" x2="0.6" y2="1">
-          <stop offset="0" stop-color="#7FEDEF"/>
-          <stop offset="1" stop-color="#28B7C6"/>
+          <stop offset="0" stop-color="var(--color-accent-bright)"/>
+          <stop offset="1" stop-color="var(--color-accent-deep)"/>
         </linearGradient>
       </defs>
-      <rect x="2" y="2" width="60" height="60" rx="14" fill="#0A1016" stroke="#262B33" stroke-width="3"/>
+      <rect x="2" y="2" width="60" height="60" rx="14" fill="var(--color-paper)" stroke="var(--color-border)" stroke-width="3"/>
       <path d="M37 9 L18 35 L29 35 L25 55 L47 26 L34 26 Z" fill="url(#logo-bolt)"/>
-      <path d="M25 55 L29 35 L20 35 Z" fill="#1A8FA0" opacity="0.55"/>
+      <path d="M25 55 L29 35 L20 35 Z" fill="var(--color-accent-shade)" opacity="0.55"/>
     </svg>
     <span class="font-display font-bold text-lg tracking-tight">KREA&nbsp;2&nbsp;<span class="text-accent">TURBO</span></span>
     <span class="text-muted text-xs font-mono hidden md:inline">12B · 8 步蒸馏 · 本地推理</span>
@@ -106,11 +106,12 @@
           class="w-full resize-y min-h-24 bg-panel border border-border rounded-md px-3 py-2 text-sm leading-relaxed placeholder:text-muted/60 focus:border-accent"></textarea>
       </div>
 
-      <!-- 风格 / 角色 / LoRA 选择入口（选中高亮，多选显数量） -->
+      <!-- 风格 / 角色 / LoRA / 方案 选择入口（选中高亮，多选显数量） -->
       <div class="grid grid-cols-2 gap-1.5">
         <button id="style-summary" type="button" aria-label="打开风格选择器" class="summary-btn">选择风格</button>
         <button id="role-summary" type="button" aria-label="打开角色选择器" class="summary-btn">选择角色</button>
-        <button id="lora-summary" type="button" aria-label="管理 LoRA（前往模型页）" class="summary-btn col-span-2">选择 LoRA</button>
+        <button id="lora-summary" type="button" aria-label="管理 LoRA（前往模型页）" class="summary-btn">选择 LoRA</button>
+        <button id="combo-btn" type="button" aria-label="风格方案" class="summary-btn">方案</button>
       </div>
 
       <!-- 比例 -->
@@ -199,9 +200,13 @@
           <div class="h-0.5 bg-border rounded-full overflow-hidden">
             <div id="cp-bar" class="h-full w-full bg-accent origin-left scale-x-0 transition-transform duration-200"></div>
           </div>
-          <div class="flex justify-between mt-1 font-mono text-xs text-muted">
+          <div class="flex justify-between items-center mt-1 font-mono text-xs text-muted">
             <span id="cp-text" class="truncate">…</span>
-            <span id="cp-pct" class="shrink-0 ml-2">0%</span>
+            <span class="shrink-0 ml-2 flex items-center gap-1.5">
+              <span id="cp-pct">0%</span>
+              <button id="cp-rerun" type="button" aria-label="重跑上次任务（换随机种子）"
+                class="hidden px-2 py-0.5 rounded-sm border border-accent bg-accent-dim text-accent hover:opacity-90 transition-opacity">重跑</button>
+            </span>
           </div>
         </div>
         <p class="mt-1.5 text-xs text-muted">可连续提交多个任务，进度与取消见下方及右上角队列</p>
@@ -301,6 +306,28 @@
   </div>
 
   <!-- 灯箱 -->
+  <!-- 风格方案弹窗 -->
+  <div id="combo-dialog" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="风格方案">
+    <div class="absolute inset-0 bg-paper/90" data-close></div>
+    <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-lg flex flex-col border border-border rounded-lg bg-paper shadow-lg pointer-events-auto">
+      <div class="flex items-center px-4 py-3 border-b border-border">
+        <span class="text-sm font-mono text-ink">风格方案</span>
+        <button id="combo-close" type="button" aria-label="关闭风格方案"
+          class="ml-auto text-muted hover:text-ink text-lg leading-none px-1">×</button>
+      </div>
+      <div class="p-4 flex flex-col gap-3">
+        <p class="text-xs text-muted">方案打包：风格组合 + 角色 + 通用词。配好后起名保存，一键套用</p>
+        <div class="flex gap-1.5">
+          <input id="combo-name" type="text" placeholder="方案名，如：偶像写真相机"
+            class="flex-1 min-w-0 bg-panel border border-border rounded-md px-2.5 py-1.5 text-sm placeholder:text-muted/60 focus:border-accent">
+          <button id="combo-save" type="button"
+            class="px-3 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity shrink-0">保存当前</button>
+        </div>
+        <div id="combo-list" class="flex flex-col gap-1.5 max-h-64 overflow-y-auto"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- 通用词弹窗 -->
   <div id="common-dialog" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="通用词设置">
     <div class="absolute inset-0 bg-paper/90" data-close></div>

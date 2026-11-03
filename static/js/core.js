@@ -30,6 +30,7 @@ export const state = {
   galleryHasMore: false,
   loadingMore: false,
   currentTask: null,
+  lastRequest: null, // 上次成功任务的请求快照（重跑用）
   pollTimer: null,
   images: [],
 };

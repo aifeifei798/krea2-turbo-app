@@ -10,6 +10,11 @@
   --color-accent-dim: oklch(80% 0.14 195 / 0.14);
   --color-danger: oklch(66% 0.19 25);
 
+  /* logo 渐变（favicon.svg 内联使用对应 hex 版本） */
+  --color-accent-bright: #7FEDEF;
+  --color-accent-deep: #28B7C6;
+  --color-accent-shade: #1A8FA0;
+
   /* 离线优先：配方字体缺货时退到系统栈，避免 serif 兜底破坏工程气质 */
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
