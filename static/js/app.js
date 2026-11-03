@@ -8,8 +8,10 @@ import { bindQueueUI } from "./queue.js";
 import { bindCombos, syncComboBadge } from "./combos.js";
 import { bindModel, waitReady, renderPrecision, syncModelState } from "./model-page.js";
 import { renderLoras } from "./lora.js";
-import { loadGallery, bindGalleryScroll, bindLightbox, setRedrawHandler, setInpaintHandler } from "./gallery.js";
+import { loadGallery, bindGalleryScroll, setRedrawHandler, setInpaintHandler } from "./gallery.js";
+import { bindLightbox } from "./lightbox.js";
 import { bindInpaint } from "./inpaint.js";
+import { bindFine } from "./inpaint-fine.js";
 import { initI18n, applyStatic, bindLangSelect } from "./i18n.js";
 
 async function init() {
@@ -21,6 +23,7 @@ async function init() {
   bindTheme();
   bindModel();
   bindInpaint();
+  bindFine();
   bindLightbox();
   bindPicker();
   bindCommonDialog();
