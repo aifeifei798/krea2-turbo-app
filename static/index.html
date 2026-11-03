@@ -23,29 +23,31 @@
       <path d="M25 55 L29 35 L20 35 Z" fill="var(--color-accent-shade)" opacity="0.55"/>
     </svg>
     <span class="font-display font-bold text-lg tracking-tight">KREA&nbsp;2&nbsp;<span class="text-accent">TURBO</span></span>
-    <span class="text-muted text-xs font-mono hidden md:inline">12B · 8 步蒸馏 · 本地推理</span>
-    <nav class="ml-4 md:ml-6 flex items-center gap-1" aria-label="页面导航">
+    <span class="text-muted text-xs font-mono hidden md:inline" data-i18n="12B · 8 步蒸馏 · 本地推理">12B · 8 步蒸馏 · 本地推理</span>
+    <nav class="ml-4 md:ml-6 flex items-center gap-1" aria-label="页面导航" data-i18n-aria="页面导航">
       <button id="nav-studio" type="button" data-view="studio" aria-current="page"
-        class="px-2.5 py-1.5 text-sm font-mono border-b border-accent text-accent">制作</button>
+        class="px-2.5 py-1.5 text-sm font-mono border-b border-accent text-accent" data-i18n="制作">制作</button>
       <button id="nav-models" type="button" data-view="models" aria-current="false"
-        class="px-2.5 py-1.5 text-sm font-mono border-b border-transparent text-muted hover:text-ink transition-colors">模型</button>
+        class="px-2.5 py-1.5 text-sm font-mono border-b border-transparent text-muted hover:text-ink transition-colors" data-i18n="模型">模型</button>
     </nav>
 
-    <!-- 任务队列入口 + 弹出面板 -->
+    <!-- 任务队列入口 + 语言切换 + 弹出面板 -->
     <div class="relative ml-auto flex items-center gap-2">
-      <button id="queue-btn" type="button" aria-label="生成队列" aria-expanded="false"
+      <select id="lang-select" aria-label="切换语言 / Language"
+        class="bg-panel border border-border rounded-sm font-mono text-xs text-muted px-1 py-1 cursor-pointer hover:border-accent transition-colors"></select>
+      <button id="queue-btn" type="button" aria-label="生成队列" aria-expanded="false" data-i18n-aria="生成队列"
         class="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border border-border font-mono text-xs text-muted hover:border-accent hover:text-ink transition-colors">
         <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
           <path d="M1 2.5h10M1 6h10M1 9.5h6"/>
-        </svg><span class="hidden sm:inline">队列</span>
+        </svg><span class="hidden sm:inline" data-i18n="队列">队列</span>
         <span id="queue-count" class="hidden min-w-4 h-4 px-1 inline-flex items-center justify-center rounded-full bg-accent text-paper text-xs leading-none">0</span>
       </button>
       <div id="queue-pop" class="hidden absolute right-0 top-full mt-2 w-72 max-w-[85vw] z-50 border border-border rounded-md bg-paper shadow-lg">
         <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
-          <span class="text-xs font-mono text-muted">生成队列</span>
+          <span class="text-xs font-mono text-muted" data-i18n="生成队列">生成队列</span>
           <button id="queue-cancel-all" type="button"
-            class="ml-auto text-xs font-mono text-muted hover:text-danger transition-colors">全部取消</button>
-          <button id="queue-close" type="button" aria-label="关闭队列面板"
+            class="ml-auto text-xs font-mono text-muted hover:text-danger transition-colors" data-i18n="全部取消">全部取消</button>
+          <button id="queue-close" type="button" aria-label="关闭队列面板" data-i18n-aria="关闭队列面板"
             class="text-muted hover:text-ink text-sm leading-none">×</button>
         </div>
         <div id="queue-list" class="max-h-80 overflow-y-auto p-2 flex flex-col gap-1.5" role="list"></div>
@@ -53,7 +55,7 @@
     </div>
 
     <span id="status-badge" class="inline-flex items-center gap-2 font-mono text-xs px-2 py-1 rounded-sm border border-border text-muted">
-      <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-muted"></span><span id="status-text">连接中…</span>
+      <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-muted"></span><span id="status-text" data-i18n="连接中…">连接中…</span>
     </span>
   </header>
 
@@ -63,12 +65,12 @@
     <div id="view-studio" class="h-full min-h-0 grid lg:grid-cols-[340px_1fr]">
 
     <!-- 左：控制面板 -->
-    <section aria-label="生成控制" class="min-h-0 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-border p-4 md:p-5 flex flex-col gap-5">
+    <section aria-label="生成控制" data-i18n-aria="生成控制" class="min-h-0 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-border p-4 md:p-5 flex flex-col gap-5">
 
       <!-- 模式 -->
       <div>
-        <span class="block text-xs font-mono text-muted mb-2">模式 MODE</span>
-        <div id="mode-group" class="grid grid-cols-3 gap-1" role="group" aria-label="生成模式">
+        <span class="block text-xs font-mono text-muted mb-2" data-i18n="模式 MODE">模式 MODE</span>
+        <div id="mode-group" class="grid grid-cols-3 gap-1" role="group" aria-label="生成模式" data-i18n-aria="生成模式">
           <!-- JS 填充 -->
         </div>
       </div>
@@ -76,18 +78,18 @@
       <!-- 图生图：参考图 + 重绘幅度（仅图生图模式显示） -->
       <div id="i2i-panel" class="hidden">
         <div class="flex items-start gap-2.5">
-          <div id="i2i-drop" role="button" tabindex="0" aria-label="上传参考图，点击选择或拖入图片"
+          <div id="i2i-drop" role="button" tabindex="0" aria-label="上传参考图，点击选择或拖入图片" data-i18n-aria="上传参考图，点击选择或拖入图片"
             class="relative shrink-0 w-20 h-20 rounded-md border border-dashed border-border bg-panel-2 flex items-center justify-center cursor-pointer hover:border-accent transition-colors overflow-hidden">
-            <img id="i2i-thumb" class="hidden w-full h-full object-cover" alt="参考图预览">
+            <img id="i2i-thumb" class="hidden w-full h-full object-cover" alt="参考图预览" data-i18n-alt="参考图预览">
             <span id="i2i-plus" aria-hidden="true" class="text-muted text-xl leading-none">+</span>
-            <button id="i2i-remove" type="button" aria-label="移除参考图"
+            <button id="i2i-remove" type="button" aria-label="移除参考图" data-i18n-aria="移除参考图"
               class="hidden absolute top-1 right-1 w-5 h-5 items-center justify-center rounded-sm border border-border bg-paper/90 text-muted hover:text-danger hover:border-danger transition-colors text-xs">×</button>
           </div>
           <div class="flex-1 min-w-0">
-            <label for="strength" class="block text-xs font-mono text-muted mb-2">重绘幅度 STRENGTH</label>
+            <label for="strength" class="block text-xs font-mono text-muted mb-2" data-i18n="重绘幅度 STRENGTH">重绘幅度 STRENGTH</label>
             <input id="strength" type="range" min="0.05" max="0.95" step="0.05" value="0.6" class="w-full mt-2.5 accent-accent">
             <div class="flex items-center justify-between mt-1">
-              <span class="text-xs text-muted">幅度越大改动越大</span>
+              <span class="text-xs text-muted" data-i18n="幅度越大改动越大">幅度越大改动越大</span>
               <span id="strength-val" class="text-xs font-mono text-ink">0.60</span>
             </div>
           </div>
@@ -98,38 +100,38 @@
       <!-- 修图：上传图 + 画笔涂抹蒙版（仅修图模式显示） -->
       <div id="inpaint-panel" class="hidden">
         <div class="flex items-start gap-2.5">
-          <div id="inpaint-drop" role="button" tabindex="0" aria-label="上传要修的图片，点击选择或拖入图片"
+          <div id="inpaint-drop" role="button" tabindex="0" aria-label="上传要修的图片，点击选择或拖入图片" data-i18n-aria="上传要修的图片，点击选择或拖入图片"
             class="relative shrink-0 w-20 h-20 rounded-md border border-dashed border-border bg-panel-2 flex items-center justify-center cursor-pointer hover:border-accent transition-colors overflow-hidden">
-            <img id="inpaint-thumb" class="hidden w-full h-full object-cover" alt="修图原图预览">
+            <img id="inpaint-thumb" class="hidden w-full h-full object-cover" alt="修图原图预览" data-i18n-alt="修图原图预览">
             <span id="inpaint-plus" aria-hidden="true" class="text-muted text-xl leading-none">+</span>
-            <button id="inpaint-remove" type="button" aria-label="移除图片"
+            <button id="inpaint-remove" type="button" aria-label="移除图片" data-i18n-aria="移除图片"
               class="hidden absolute top-1 right-1 w-5 h-5 items-center justify-center rounded-sm border border-border bg-paper/90 text-muted hover:text-danger hover:border-danger transition-colors text-xs">×</button>
           </div>
-          <p class="flex-1 min-w-0 text-xs text-muted leading-relaxed">
+          <p class="flex-1 min-w-0 text-xs text-muted leading-relaxed" data-i18n="上传图片，用画笔涂抹要重绘的部位（如手、脸、脚），涂改内容写在提示词里。">
             上传图片，用画笔涂抹要重绘的部位（如手、脸、脚），涂改内容写在提示词里。
           </p>
         </div>
         <div id="inpaint-editor" class="hidden mt-3">
           <div class="relative w-fit max-w-full mx-auto">
-            <img id="inpaint-base" class="block max-w-full max-h-80 w-auto h-auto rounded-md border border-border" alt="修图原图">
-            <canvas id="inpaint-canvas" aria-label="涂抹蒙版画布"
+            <img id="inpaint-base" class="block max-w-full max-h-80 w-auto h-auto rounded-md border border-border" alt="修图原图" data-i18n-alt="修图原图">
+            <canvas id="inpaint-canvas" aria-label="涂抹蒙版画布" data-i18n-aria="涂抹蒙版画布"
               class="absolute inset-0 w-full h-full rounded-md cursor-none touch-none"></canvas>
           </div>
           <div class="flex items-center gap-1.5 mt-2">
-            <input id="inpaint-brush" type="range" min="6" max="80" step="2" value="28" aria-label="画笔大小"
+            <input id="inpaint-brush" type="range" min="6" max="80" step="2" value="28" aria-label="画笔大小" data-i18n-aria="画笔大小"
               class="flex-1 min-w-0 accent-accent">
             <span id="inpaint-brush-val" class="text-xs font-mono text-ink w-6 text-right shrink-0">28</span>
-            <button type="button" data-inpaint-tool="brush" aria-label="画笔工具" class="px-2 shrink-0">画笔</button>
-            <button type="button" data-inpaint-tool="eraser" aria-label="橡皮工具" class="px-2 shrink-0">橡皮</button>
-            <button type="button" id="inpaint-undo" aria-label="撤销上一笔" class="px-2 shrink-0">撤销</button>
-            <button type="button" id="inpaint-clear" aria-label="清空全部涂抹" class="px-2 shrink-0">清空</button>
+            <button type="button" data-inpaint-tool="brush" aria-label="画笔工具" data-i18n="画笔" data-i18n-aria="画笔工具" class="px-2 shrink-0">画笔</button>
+            <button type="button" data-inpaint-tool="eraser" aria-label="橡皮工具" data-i18n="橡皮" data-i18n-aria="橡皮工具" class="px-2 shrink-0">橡皮</button>
+            <button type="button" id="inpaint-undo" aria-label="撤销上一笔" data-i18n="撤销" data-i18n-aria="撤销上一笔" class="px-2 shrink-0">撤销</button>
+            <button type="button" id="inpaint-clear" aria-label="清空全部涂抹" data-i18n="清空" data-i18n-aria="清空全部涂抹" class="px-2 shrink-0">清空</button>
           </div>
         </div>
         <div class="mt-3">
-          <label for="inpaint-strength" class="block text-xs font-mono text-muted mb-2">重绘幅度 STRENGTH</label>
+          <label for="inpaint-strength" class="block text-xs font-mono text-muted mb-2" data-i18n="重绘幅度 STRENGTH">重绘幅度 STRENGTH</label>
           <input id="inpaint-strength" type="range" min="0.05" max="0.95" step="0.05" value="0.75" class="w-full mt-2.5 accent-accent">
           <div class="flex items-center justify-between mt-1">
-            <span class="text-xs text-muted">只作用于涂抹区域，幅度越大改动越大</span>
+            <span class="text-xs text-muted" data-i18n="只作用于涂抹区域，幅度越大改动越大">只作用于涂抹区域，幅度越大改动越大</span>
             <span id="inpaint-strength-val" class="text-xs font-mono text-ink">0.75</span>
           </div>
         </div>
@@ -139,26 +141,26 @@
       <!-- 提示词 -->
       <div>
         <div class="flex items-center mb-2">
-          <label for="prompt" class="text-xs font-mono text-muted">提示词 PROMPT</label>
-          <button id="common-btn" type="button" aria-label="设置通用词"
-            class="ml-auto text-xs font-mono text-muted hover:text-accent border border-transparent hover:border-border rounded-sm px-1.5 py-0.5 transition-colors">通用词</button>
+          <label for="prompt" class="text-xs font-mono text-muted" data-i18n="提示词 PROMPT">提示词 PROMPT</label>
+          <button id="common-btn" type="button" aria-label="设置通用词" data-i18n-aria="设置通用词"
+            class="ml-auto text-xs font-mono text-muted hover:text-accent border border-transparent hover:border-border rounded-sm px-1.5 py-0.5 transition-colors" data-i18n="通用词">通用词</button>
         </div>
-        <textarea id="prompt" rows="4" placeholder="描述你想要的画面…"
+        <textarea id="prompt" rows="4" placeholder="描述你想要的画面…" data-i18n-ph="描述你想要的画面…"
           class="w-full resize-y min-h-24 bg-panel border border-border rounded-md px-3 py-2 text-sm leading-relaxed placeholder:text-muted/60 focus:border-accent"></textarea>
       </div>
 
       <!-- 风格 / 角色 / LoRA / 方案 选择入口（选中高亮，多选显数量） -->
       <div class="grid grid-cols-2 gap-1.5">
-        <button id="style-summary" type="button" aria-label="打开风格选择器" class="summary-btn">选择风格</button>
-        <button id="role-summary" type="button" aria-label="打开角色选择器" class="summary-btn">选择角色</button>
-        <button id="lora-summary" type="button" aria-label="管理 LoRA（前往模型页）" class="summary-btn">选择 LoRA</button>
-        <button id="combo-btn" type="button" aria-label="风格方案" class="summary-btn">方案</button>
+        <button id="style-summary" type="button" aria-label="打开风格选择器" data-i18n-aria="打开风格选择器" class="summary-btn" data-i18n="选择风格">选择风格</button>
+        <button id="role-summary" type="button" aria-label="打开角色选择器" data-i18n-aria="打开角色选择器" class="summary-btn" data-i18n="选择角色">选择角色</button>
+        <button id="lora-summary" type="button" aria-label="管理 LoRA（前往模型页）" data-i18n-aria="管理 LoRA（前往模型页）" class="summary-btn" data-i18n="选择 LoRA">选择 LoRA</button>
+        <button id="combo-btn" type="button" aria-label="风格方案" data-i18n-aria="风格方案" class="summary-btn" data-i18n="方案">方案</button>
       </div>
 
       <!-- 比例（修图模式隐藏：尺寸跟原图） -->
       <div id="aspect-row">
-        <span class="block text-xs font-mono text-muted mb-2">比例 ASPECT</span>
-        <div id="aspect-group" class="grid grid-cols-7 gap-1" role="group" aria-label="画面比例">
+        <span class="block text-xs font-mono text-muted mb-2" data-i18n="比例 ASPECT">比例 ASPECT</span>
+        <div id="aspect-group" class="grid grid-cols-7 gap-1" role="group" aria-label="画面比例" data-i18n-aria="画面比例">
           <!-- JS 填充 -->
         </div>
       </div>
@@ -166,35 +168,35 @@
       <!-- 步数 / 批量 / 次数 -->
       <div class="grid grid-cols-3 gap-4">
         <div>
-          <label for="steps" class="block text-xs font-mono text-muted mb-2">步数 STEPS</label>
+          <label for="steps" class="block text-xs font-mono text-muted mb-2" data-i18n="步数 STEPS">步数 STEPS</label>
           <input id="steps" type="range" min="4" max="16" step="1" value="8" class="w-full mt-2.5 accent-accent">
         </div>
         <div>
-          <label for="batch" class="block text-xs font-mono text-muted mb-2">批量 BATCH</label>
+          <label for="batch" class="block text-xs font-mono text-muted mb-2" data-i18n="批量 BATCH">批量 BATCH</label>
           <div class="relative">
-            <select id="batch" aria-label="每轮生成张数"
+            <select id="batch" aria-label="每轮生成张数" data-i18n-aria="每轮生成张数"
               class="w-full appearance-none bg-panel border border-border rounded-md pl-2.5 pr-6 py-1.5 text-xs font-mono text-ink focus:border-accent cursor-pointer">
-              <option value="1">1 张</option>
-              <option value="2">2 张</option>
-              <option value="3">3 张</option>
-              <option value="4">4 张</option>
+              <option value="1" data-i18n="1 张">1 张</option>
+              <option value="2" data-i18n="2 张">2 张</option>
+              <option value="3" data-i18n="3 张">3 张</option>
+              <option value="4" data-i18n="4 张">4 张</option>
             </select>
             <span aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted text-xs">▾</span>
           </div>
         </div>
         <div>
-          <label for="rounds" class="block text-xs font-mono text-muted mb-2" title="每轮独立跑一次生成（每轮出批量张），每轮种子不同，图片逐轮进画廊">次数 ROUNDS</label>
+          <label for="rounds" class="block text-xs font-mono text-muted mb-2" title="每轮独立跑一次生成（每轮出批量张），每轮种子不同，图片逐轮进画廊" data-i18n="次数 ROUNDS" data-i18n-title="每轮独立跑一次生成（每轮出批量张），每轮种子不同，图片逐轮进画廊">次数 ROUNDS</label>
           <div class="relative">
-            <select id="rounds" aria-label="重复生成次数"
+            <select id="rounds" aria-label="重复生成次数" data-i18n-aria="重复生成次数"
               class="w-full appearance-none bg-panel border border-border rounded-md pl-2.5 pr-6 py-1.5 text-xs font-mono text-ink focus:border-accent cursor-pointer">
-              <option value="1">1 次</option>
-              <option value="2">2 次</option>
-              <option value="3">3 次</option>
-              <option value="4">4 次</option>
-              <option value="5">5 次</option>
-              <option value="6">6 次</option>
-              <option value="7">7 次</option>
-              <option value="8">8 次</option>
+              <option value="1" data-i18n="1 次">1 次</option>
+              <option value="2" data-i18n="2 次">2 次</option>
+              <option value="3" data-i18n="3 次">3 次</option>
+              <option value="4" data-i18n="4 次">4 次</option>
+              <option value="5" data-i18n="5 次">5 次</option>
+              <option value="6" data-i18n="6 次">6 次</option>
+              <option value="7" data-i18n="7 次">7 次</option>
+              <option value="8" data-i18n="8 次">8 次</option>
             </select>
             <span aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted text-xs">▾</span>
           </div>
@@ -203,19 +205,19 @@
 
       <!-- 种子 -->
       <div>
-        <label for="seed" class="block text-xs font-mono text-muted mb-2">种子 SEED（留空随机）</label>
+        <label for="seed" class="block text-xs font-mono text-muted mb-2" data-i18n="种子 SEED（留空随机）">种子 SEED（留空随机）</label>
         <div class="flex gap-1.5">
           <input id="seed" type="number" min="0" max="2147483647" inputmode="numeric" placeholder="auto"
             class="flex-1 min-w-0 bg-panel border border-border rounded-md px-3 py-1.5 text-sm font-mono placeholder:text-muted/60 focus:border-accent">
-          <button id="seed-random" type="button" aria-label="随机种子"
-            class="px-3 rounded-md border border-border bg-panel text-sm font-mono hover:border-accent transition-colors">随机</button>
-          <button id="seed-clear" type="button" aria-label="清除种子"
+          <button id="seed-random" type="button" aria-label="随机种子" data-i18n-aria="随机种子"
+            class="px-3 rounded-md border border-border bg-panel text-sm font-mono hover:border-accent transition-colors" data-i18n="随机">随机</button>
+          <button id="seed-clear" type="button" aria-label="清除种子" data-i18n-aria="清除种子"
             class="px-3 rounded-md border border-border bg-panel text-sm font-mono text-muted hover:border-accent hover:text-ink transition-colors">×</button>
         </div>
       </div>
 
       <!-- 签名数据块：等宽实时参数 -->
-      <div class="grid grid-cols-3 border border-border rounded-md divide-x divide-border bg-panel" aria-label="当前参数">
+      <div class="grid grid-cols-3 border border-border rounded-md divide-x divide-border bg-panel" aria-label="当前参数" data-i18n-aria="当前参数">
         <div class="px-3 py-2.5">
           <div class="text-xs font-mono text-muted">STEPS</div>
           <div id="data-steps" class="font-mono text-base leading-6 truncate">8</div>
@@ -236,7 +238,7 @@
           class="w-full h-11 rounded-md bg-accent text-paper font-display font-bold tracking-wide text-base transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
           生成 <span class="font-mono">▸</span>
         </button>
-        <div id="current-progress" class="hidden mt-2" role="progressbar" aria-label="当前任务进度"
+        <div id="current-progress" class="hidden mt-2" role="progressbar" aria-label="当前任务进度" data-i18n-aria="当前任务进度"
           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="h-0.5 bg-border rounded-full overflow-hidden">
             <div id="cp-bar" class="h-full w-full bg-accent origin-left scale-x-0 transition-transform duration-200"></div>
@@ -245,28 +247,28 @@
             <span id="cp-text" class="truncate">…</span>
             <span class="shrink-0 ml-2 flex items-center gap-1.5">
               <span id="cp-pct">0%</span>
-              <button id="cp-rerun" type="button" aria-label="重跑上次任务（换随机种子）"
-                class="hidden px-2 py-0.5 rounded-sm border border-accent bg-accent-dim text-accent hover:opacity-90 transition-opacity">重跑</button>
+              <button id="cp-rerun" type="button" aria-label="重跑上次任务（换随机种子）" data-i18n-aria="重跑上次任务（换随机种子）"
+                class="hidden px-2 py-0.5 rounded-sm border border-accent bg-accent-dim text-accent hover:opacity-90 transition-opacity" data-i18n="重跑">重跑</button>
             </span>
           </div>
         </div>
-        <p class="mt-1.5 text-xs text-muted">可连续提交多个任务，进度与取消见下方及右上角队列</p>
+        <p class="mt-1.5 text-xs text-muted" data-i18n="可连续提交多个任务，进度与取消见下方及右上角队列">可连续提交多个任务，进度与取消见下方及右上角队列</p>
       </div>
     </section>
 
     <!-- 右：画廊 -->
-    <section aria-label="生成画廊" class="min-h-0 overflow-y-auto p-4 md:p-5">
+    <section aria-label="生成画廊" data-i18n-aria="生成画廊" class="min-h-0 overflow-y-auto p-4 md:p-5">
       <div class="flex items-center gap-3 mb-4">
-        <h1 class="text-sm font-mono text-muted">作品库 <span id="gallery-count" class="text-ink">0</span></h1>
-        <button id="refresh-btn" type="button" aria-label="刷新作品库"
-          class="ml-auto text-xs font-mono text-muted hover:text-ink transition-colors">↻ 刷新</button>
+        <h1 class="text-sm font-mono text-muted"><span data-i18n="作品库">作品库</span> <span id="gallery-count" class="text-ink">0</span></h1>
+        <button id="refresh-btn" type="button" aria-label="刷新作品库" data-i18n-aria="刷新作品库"
+          class="ml-auto text-xs font-mono text-muted hover:text-ink transition-colors" data-i18n="↻ 刷新">↻ 刷新</button>
       </div>
 
       <!-- 空态 -->
       <div id="empty-state" class="hidden">
         <div class="border border-dashed border-border rounded-lg py-16 px-6 text-center">
-          <p class="font-display text-xl mb-2">还没有作品</p>
-          <p class="text-sm text-muted mb-8">输入提示词，8 步出图。试试这些：</p>
+          <p class="font-display text-xl mb-2" data-i18n="还没有作品">还没有作品</p>
+          <p class="text-sm text-muted mb-8" data-i18n="输入提示词，8 步出图。试试这些：">输入提示词，8 步出图。试试这些：</p>
           <div id="example-prompts" class="flex flex-col sm:flex-row justify-center gap-2 max-w-3xl mx-auto">
             <!-- JS 填充示例提示词 -->
           </div>
@@ -280,7 +282,7 @@
 
       <!-- 无限滚动哨兵 + 加载指示 -->
       <div id="gallery-sentinel" class="h-px" aria-hidden="true"></div>
-      <div id="gallery-more" class="hidden py-3 text-center text-xs font-mono text-muted">加载中…</div>
+      <div id="gallery-more" class="hidden py-3 text-center text-xs font-mono text-muted" data-i18n="加载中…">加载中…</div>
     </section>
     </div><!-- /view-studio -->
 
@@ -289,45 +291,45 @@
       <div class="max-w-4xl mx-auto flex flex-col gap-5">
 
         <!-- 基础模型 -->
-        <section aria-label="基础模型">
-          <h1 class="text-sm font-mono text-muted mb-3">基础模型</h1>
+        <section aria-label="基础模型" data-i18n-aria="基础模型">
+          <h1 class="text-sm font-mono text-muted mb-3" data-i18n="基础模型">基础模型</h1>
           <div class="border border-border rounded-lg bg-panel p-4 md:p-5">
             <div class="flex items-center gap-3 flex-wrap">
               <span id="model-name" class="font-display font-bold text-xl">Krea 2 Turbo</span>
-              <span class="font-mono text-xs text-muted">12B DiT · 8 步蒸馏 · guidance_scale 固定 0.0</span>
+              <span class="font-mono text-xs text-muted" data-i18n="12B DiT · 8 步蒸馏 · guidance_scale 固定 0.0">12B DiT · 8 步蒸馏 · guidance_scale 固定 0.0</span>
               <span id="model-state" class="ml-auto inline-flex items-center gap-2 font-mono text-xs px-2 py-1 rounded-sm border border-border text-muted">
-                <span id="model-state-dot" class="w-1.5 h-1.5 rounded-full bg-muted"></span><span id="model-state-text">加载中</span>
+                <span id="model-state-dot" class="w-1.5 h-1.5 rounded-full bg-muted"></span><span id="model-state-text" data-i18n="加载中">加载中</span>
               </span>
             </div>
-            <p id="model-detail" class="mt-3 font-mono text-xs text-muted break-all">正在初始化…</p>
+            <p id="model-detail" class="mt-3 font-mono text-xs text-muted break-all" data-i18n="正在初始化…">正在初始化…</p>
 
             <div class="mt-5 pt-4 border-t border-border">
-              <span class="block text-xs font-mono text-muted mb-2">加载精度 PRECISION</span>
-              <div id="precision-group" class="grid grid-cols-3 gap-1.5" role="group" aria-label="加载精度">
+              <span class="block text-xs font-mono text-muted mb-2" data-i18n="加载精度 PRECISION">加载精度 PRECISION</span>
+              <div id="precision-group" class="grid grid-cols-3 gap-1.5" role="group" aria-label="加载精度" data-i18n-aria="加载精度">
                 <!-- JS 填充 -->
               </div>
               <p id="precision-hint" class="mt-2 text-xs font-mono text-muted">—</p>
               <div class="mt-4 flex gap-2">
                 <button id="model-load-btn" type="button" disabled
-                  class="px-4 h-9 rounded-md bg-accent text-paper font-bold text-sm transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">加载模型</button>
+                  class="px-4 h-9 rounded-md bg-accent text-paper font-bold text-sm transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="加载模型">加载模型</button>
                 <button id="model-unload-btn" type="button" disabled
-                  class="px-4 h-9 rounded-md border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed">卸载</button>
+                  class="px-4 h-9 rounded-md border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed" data-i18n="卸载">卸载</button>
               </div>
             </div>
           </div>
         </section>
 
         <!-- LoRA 管理 -->
-        <section aria-label="LoRA 管理">
+        <section aria-label="LoRA 管理" data-i18n-aria="LoRA 管理">
           <div class="flex items-center gap-3 mb-3">
-            <h1 class="text-sm font-mono text-muted">LoRA 模型</h1>
+            <h1 class="text-sm font-mono text-muted" data-i18n="LoRA 模型">LoRA 模型</h1>
             <span id="lora-active-count" class="font-mono text-xs text-accent"></span>
-            <span class="ml-auto font-mono text-xs text-muted">开关 = 加载/卸载 · 加载后常驻 · 强度 0–2</span>
+            <span class="ml-auto font-mono text-xs text-muted" data-i18n="开关 = 加载/卸载 · 加载后常驻 · 强度 0–2">开关 = 加载/卸载 · 加载后常驻 · 强度 0–2</span>
           </div>
           <div id="lora-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <!-- JS 填充 LoRA 卡片 -->
           </div>
-          <div id="lora-empty" class="hidden border border-dashed border-border rounded-lg py-12 text-center text-sm text-muted">
+          <div id="lora-empty" class="hidden border border-dashed border-border rounded-lg py-12 text-center text-sm text-muted" data-i18n="loras 目录下没有 .safetensors 文件">
             loras 目录下没有 .safetensors 文件
           </div>
         </section>
@@ -343,26 +345,26 @@
         <div id="load-bar" class="h-full bg-accent w-full origin-left scale-x-[0.35] transition-transform duration-500"></div>
       </div>
     </div>
-    <p id="load-detail" class="text-sm text-muted font-mono">正在初始化…</p>
+    <p id="load-detail" class="text-sm text-muted font-mono" data-i18n="正在初始化…">正在初始化…</p>
   </div>
 
   <!-- 灯箱 -->
   <!-- 风格方案弹窗 -->
-  <div id="combo-dialog" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="风格方案">
+  <div id="combo-dialog" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="风格方案" data-i18n-aria="风格方案">
     <div class="absolute inset-0 bg-paper/90" data-close></div>
     <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-lg flex flex-col border border-border rounded-lg bg-paper shadow-lg pointer-events-auto">
       <div class="flex items-center px-4 py-3 border-b border-border">
-        <span class="text-sm font-mono text-ink">风格方案</span>
-        <button id="combo-close" type="button" aria-label="关闭风格方案"
+        <span class="text-sm font-mono text-ink" data-i18n="风格方案">风格方案</span>
+        <button id="combo-close" type="button" aria-label="关闭风格方案" data-i18n-aria="关闭风格方案"
           class="ml-auto text-muted hover:text-ink text-lg leading-none px-1">×</button>
       </div>
       <div class="p-4 flex flex-col gap-3">
-        <p class="text-xs text-muted">方案打包：风格组合 + 角色 + 通用词。配好后起名保存，一键套用</p>
+        <p class="text-xs text-muted" data-i18n="方案打包：风格组合 + 角色 + 通用词。配好后起名保存，一键套用">方案打包：风格组合 + 角色 + 通用词。配好后起名保存，一键套用</p>
         <div class="flex gap-1.5">
-          <input id="combo-name" type="text" placeholder="方案名，如：偶像写真相机"
+          <input id="combo-name" type="text" placeholder="方案名，如：偶像写真相机" data-i18n-ph="方案名，如：偶像写真相机"
             class="flex-1 min-w-0 bg-panel border border-border rounded-md px-2.5 py-1.5 text-sm placeholder:text-muted/60 focus:border-accent">
           <button id="combo-save" type="button"
-            class="px-3 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity shrink-0">保存当前</button>
+            class="px-3 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity shrink-0" data-i18n="保存当前">保存当前</button>
         </div>
         <div id="combo-list" class="flex flex-col gap-1.5 max-h-64 overflow-y-auto"></div>
       </div>
@@ -370,16 +372,16 @@
   </div>
 
   <!-- 通用词弹窗 -->
-  <div id="common-dialog" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="通用词设置">
+  <div id="common-dialog" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="通用词设置" data-i18n-aria="通用词设置">
     <div class="absolute inset-0 bg-paper/90" data-close></div>
     <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-lg flex flex-col border border-border rounded-lg bg-paper shadow-lg pointer-events-auto">
       <div class="flex items-center px-4 py-3 border-b border-border">
-        <span class="text-sm font-mono text-ink">通用词</span>
-        <button id="common-close" type="button" aria-label="关闭通用词"
+        <span class="text-sm font-mono text-ink" data-i18n="通用词">通用词</span>
+        <button id="common-close" type="button" aria-label="关闭通用词" data-i18n-aria="关闭通用词"
           class="ml-auto text-muted hover:text-ink text-lg leading-none px-1">×</button>
       </div>
       <div class="p-4 flex flex-col gap-3">
-        <p class="text-xs text-muted">这些词会放在每张图提示词的最前面（逗号分隔），画质词、质量词写这里</p>
+        <p class="text-xs text-muted" data-i18n="这些词会放在每张图提示词的最前面（逗号分隔），画质词、质量词写这里">这些词会放在每张图提示词的最前面（逗号分隔），画质词、质量词写这里</p>
         <textarea id="common-text" rows="4"
           class="w-full bg-panel border border-border rounded-md px-3 py-2 text-sm font-mono leading-relaxed placeholder:text-muted/60 focus:border-accent"
           placeholder="masterpiece, best quality, ultra detailed"></textarea>
@@ -388,46 +390,46 @@
       <div class="flex items-center gap-3 px-4 py-2.5 border-t border-border">
         <span id="common-info" class="text-xs font-mono text-muted truncate"></span>
         <button id="common-save" type="button"
-          class="ml-auto px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity">保存</button>
+          class="ml-auto px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="保存">保存</button>
       </div>
     </div>
   </div>
 
   <!-- 风格/角色选择弹窗 -->
-  <div id="picker" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="风格与角色选择">
+  <div id="picker" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="风格与角色选择" data-i18n-aria="风格与角色选择">
     <div class="absolute inset-0 bg-paper/90" data-close></div>
     <div class="absolute inset-x-3 top-[5vh] bottom-[5vh] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-3xl flex flex-col border border-border rounded-lg bg-paper shadow-lg pointer-events-auto">
       <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
-        <span id="picker-title" class="text-sm font-mono text-ink shrink-0">选择风格</span>
-        <input id="picker-search" type="text" placeholder="搜索（中文/英文）"
+        <span id="picker-title" class="text-sm font-mono text-ink shrink-0" data-i18n="选择风格">选择风格</span>
+        <input id="picker-search" type="text" placeholder="搜索（中文/英文）" data-i18n-ph="搜索（中文/英文）"
           class="ml-auto w-40 md:w-60 bg-panel border border-border rounded-md px-2.5 py-1.5 text-xs font-mono placeholder:text-muted/60 focus:border-accent">
-        <button id="picker-close" type="button" aria-label="关闭选择器"
+        <button id="picker-close" type="button" aria-label="关闭选择器" data-i18n-aria="关闭选择器"
           class="text-muted hover:text-ink text-lg leading-none px-1">×</button>
       </div>
       <div id="picker-body" class="flex-1 overflow-y-auto p-3"></div>
       <div class="flex items-center gap-3 px-4 py-2.5 border-t border-border">
         <span id="picker-info" class="text-xs font-mono text-muted truncate"></span>
-        <button id="picker-clear" type="button" class="ml-auto text-xs font-mono text-muted hover:text-ink transition-colors">清空</button>
+        <button id="picker-clear" type="button" class="ml-auto text-xs font-mono text-muted hover:text-ink transition-colors" data-i18n="清空">清空</button>
         <button id="picker-ok" type="button"
-          class="px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity">确定</button>
+          class="px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="确定">确定</button>
       </div>
     </div>
   </div>
 
-  <div id="lightbox" class="fixed inset-0 z-50 bg-paper/90 hidden" role="dialog" aria-modal="true" aria-label="图片详情">
+  <div id="lightbox" class="fixed inset-0 z-50 bg-paper/90 hidden" role="dialog" aria-modal="true" aria-label="图片详情" data-i18n-aria="图片详情">
     <div class="absolute inset-0" data-close></div>
     <div class="relative h-full flex flex-col lg:flex-row items-center justify-center gap-6 p-4 lg:p-10 pointer-events-none">
       <div id="lb-imgzone" class="relative pointer-events-auto w-fit max-w-full flex items-center justify-center">
         <img id="lb-img" src="" alt="" class="max-h-[70vh] lg:max-h-[85vh] max-w-full object-contain rounded-md border border-border">
-        <button id="lb-prev" type="button" aria-label="上一张" data-lb-prev
+        <button id="lb-prev" type="button" aria-label="上一张" data-lb-prev data-i18n-aria="上一张"
           class="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-panel/85 text-muted text-lg leading-none hover:text-accent hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">‹</button>
-        <button id="lb-next" type="button" aria-label="下一张" data-lb-next
+        <button id="lb-next" type="button" aria-label="下一张" data-lb-next data-i18n-aria="下一张"
           class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-panel/85 text-muted text-lg leading-none hover:text-accent hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">›</button>
       </div>
       <div class="pointer-events-auto w-full lg:w-80 shrink-0 bg-panel border border-border rounded-md p-4 lg:max-h-[85vh] overflow-y-auto">
         <div class="flex items-center mb-3">
-          <h2 class="text-xs font-mono text-muted">详情</h2>
-          <button id="lb-close" type="button" aria-label="关闭详情"
+          <h2 class="text-xs font-mono text-muted" data-i18n="详情">详情</h2>
+          <button id="lb-close" type="button" aria-label="关闭详情" data-i18n-aria="关闭详情"
             class="ml-auto w-7 h-7 rounded-sm border border-border text-muted hover:text-ink hover:border-accent transition-colors">×</button>
         </div>
         <p id="lb-prompt" class="text-sm leading-relaxed mb-4 break-words whitespace-pre-line"></p>
@@ -436,17 +438,17 @@
         </dl>
         <div class="flex flex-wrap gap-2">
           <a id="lb-download" href="#" download
-            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm bg-accent text-paper text-sm font-bold hover:opacity-90 transition-opacity">下载</a>
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm bg-accent text-paper text-sm font-bold hover:opacity-90 transition-opacity" data-i18n="下载">下载</a>
           <button id="lb-copy" type="button"
-            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm hover:border-accent transition-colors">复制提示词</button>
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm hover:border-accent transition-colors" data-i18n="复制提示词">复制提示词</button>
           <button id="lb-delete" type="button"
-            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors">删除</button>
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors" data-i18n="删除">删除</button>
         </div>
         <div class="flex gap-2 mt-2">
-          <button type="button" aria-label="上一张" data-lb-prev
-            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">← 上一张</button>
-          <button type="button" aria-label="下一张" data-lb-next
-            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">下一张 →</button>
+          <button type="button" aria-label="上一张" data-lb-prev data-i18n-aria="上一张"
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none" data-i18n="← 上一张">← 上一张</button>
+          <button type="button" aria-label="下一张" data-lb-next data-i18n-aria="下一张"
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none" data-i18n="下一张 →">下一张 →</button>
         </div>
       </div>
     </div>

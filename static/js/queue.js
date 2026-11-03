@@ -3,6 +3,7 @@ import { $, state, toast, escapeHTML, escapeAttr, friendlyApiError, syncDataBloc
 import { saveSettings } from "./settings.js";
 import { insertCards } from "./gallery.js";
 import { activeLoras } from "./lora.js";
+import { t } from "./i18n.js";
 import { hasMask, getInpaintPayload } from "./inpaint.js";
 
 /* 提交成功后登记任务并渲染队列行；轮询器在有活跃任务期间常开 */
@@ -34,7 +35,7 @@ function renderQueueRow(taskId) {
     <div class="mt-1.5 h-0.5 bg-border rounded-full overflow-hidden">
       <div data-bar class="h-full w-full bg-accent origin-left scale-x-0 transition-transform duration-200"></div>
     </div>
-    <div data-text class="mt-1 font-mono text-xs text-muted">排队中，模型就绪后自动开始</div>`;
+    <div data-text class="mt-1 font-mono text-xs text-muted">${t("排队中，模型就绪后自动开始")}</div>`;
   row.querySelector("[data-cancel]").addEventListener("click", () => cancelQueuedTask(taskId));
   $("queue-list").appendChild(row);
 }
@@ -76,7 +77,7 @@ function updateIdleProgress() {
   $("cp-pct").textContent = "100%";
   const stylesText = (last.styles || []).map((s) => s.name).join(" · ");
   $("cp-text").textContent =
-    `已完成：${(last.prompt || "").slice(0, 26)}${stylesText ? ` · ${stylesText}` : ""}`;
+    t("已完成：{s}", { s: `${(last.prompt || "").slice(0, 26)}${stylesText ? ` · ${stylesText}` : ""}` });
   wrap.setAttribute("aria-valuenow", "100");
   $("cp-rerun").classList.remove("hidden");
 }
@@ -93,20 +94,21 @@ async function pollActiveTasks() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       task = await res.json();
     } catch (e) {
-      toast(`进度查询失败：${e.message}`, true);
+      toast(t("进度查询失败：{m}", { m: e.message }), true);
       finishTask(taskId);
       return;
     }
     if (task.state === "queued") {
       queued += 1;
-      updateQueueRow(taskId, "排队中，模型就绪后自动开始", 0, false);
+      updateQueueRow(taskId, t("排队中，模型就绪后自动开始"), 0, false);
       return;
     }
     if (task.state === "running") {
       const total = task.total_steps || 1;
-      const roundText = (task.rounds || 1) > 1 ? `第 ${task.round}/${task.rounds} 轮 · ` : "";
-      const canceled = task.cancel ? "停止中 · " : "";
-      const text = `${canceled}${roundText}扩散中 ${task.step}/${total}`;
+      const roundText = (task.rounds || 1) > 1
+        ? t("第 {a}/{b} 轮 · ", { a: task.round, b: task.rounds }) : "";
+      const canceled = task.cancel ? t("停止中 · ") : "";
+      const text = `${canceled}${roundText}${t("扩散中 {a}/{b}", { a: task.step, b: total })}`;
       running = { text, pct: (task.step / total) * 100 };
       updateQueueRow(taskId, text, running.pct, true);
       showTaskImages(task);
@@ -114,10 +116,10 @@ async function pollActiveTasks() {
     }
     showTaskImages(task); // 失败/取消前已出的图也保留
     if (task.state === "error") {
-      toast(`生成失败：${task.error}`, true);
+      toast(t("生成失败：{m}", { m: task.error }), true);
     } else {
       state.lastRequest = task.request; // 成功（含取消保留部分）即可重跑
-      if (task.canceled) toast(`已停止，保留了 ${task.images.length} 张已完成的图`);
+      if (task.canceled) toast(t("已停止，保留了 {n} 张已完成的图", { n: task.images.length }));
     }
     finishTask(taskId);
   }));
@@ -136,7 +138,7 @@ function updateCurrentProgress(running, queued) {
   const pct = running ? Math.max(0, Math.min(100, running.pct)) : 0;
   $("cp-bar").style.transform = `scaleX(${pct / 100})`;
   $("cp-pct").textContent = `${Math.round(pct)}%`;
-  $("cp-text").textContent = running ? running.text : `队列中 ${queued} 个任务等待处理`;
+  $("cp-text").textContent = running ? running.text : t("队列中 {n} 个任务等待处理", { n: queued });
   wrap.setAttribute("aria-valuenow", String(Math.round(pct)));
 }
 
@@ -149,10 +151,10 @@ async function cancelQueuedTask(taskId) {
     const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (isRunning) {
-      updateQueueRow(taskId, "停止中…", null, false);
+      updateQueueRow(taskId, t("停止中…"), null, false);
     } else {
       finishTask(taskId);
-      toast("已取消排队任务");
+      toast(t("已取消排队任务"));
     }
   } catch (e) {
     toast(`停止失败：${e.message}`, true);
@@ -167,10 +169,10 @@ async function cancelAllQueued() {
     ids.map((id) => fetch(`/api/tasks/${id}/cancel`, { method: "POST" })));
   ids.forEach((id) => {
     const row = document.querySelector(`[data-task="${id}"]`);
-    if (row?.dataset.running === "1") updateQueueRow(id, "停止中…", null, false);
+    if (row?.dataset.running === "1") updateQueueRow(id, t("停止中…"), null, false);
     else finishTask(id);
   });
-  toast("已请求取消全部任务");
+  toast(t("已请求取消全部任务"));
 }
 
 function closeQueuePop() {
@@ -198,12 +200,12 @@ export async function generate() {
   const isInpaint = state.mode === "inpaint";
   // 通用词会拼在提示词最前，填写了通用词即视为有内容；修图（有蒙版）提示词可留空
   if (!prompt && !(state.commonWords || "").trim() && !isInpaint) {
-    toast("请先输入提示词或通用词", true);
+    toast(t("请先输入提示词或通用词"), true);
     return;
   }
-  if (prompt.length > 4000) { toast("提示词超过 4000 字，请精简", true); return; }
-  if (state.mode === "i2i" && !state.initImage) { toast("图生图模式请先上传参考图", true); return; }
-  if (isInpaint && !hasMask()) { toast("先上传图片并用画笔涂抹要重绘的区域", true); return; }
+  if (prompt.length > 4000) { toast(t("提示词超过 4000 字，请精简"), true); return; }
+  if (state.mode === "i2i" && !state.initImage) { toast(t("图生图模式请先上传参考图"), true); return; }
+  if (isInpaint && !hasMask()) { toast(t("先上传图片并用画笔涂抹要重绘的区域"), true); return; }
   const inpaint = isInpaint ? getInpaintPayload() : null;
 
   const seedRaw = $("seed").value.trim();
@@ -214,7 +216,7 @@ export async function generate() {
       $("seed").value = seed; // 超限/非法输入自动收敛回填
       syncDataBlock();
       saveSettings();
-      toast("种子已收敛到有效范围", true);
+      toast(t("种子已收敛到有效范围"), true);
     }
   }
   const body = {
@@ -252,11 +254,11 @@ export async function generate() {
     }
     data = await res.json();
   } catch (e) {
-    toast(`提交失败：${e.message}`, true);
+    toast(t("提交失败：{m}", { m: e.message }), true);
     return;
   }
 
-  trackTask(data.task_id, (prompt || (isInpaint ? "局部重绘" : "")).slice(0, 40));
+  trackTask(data.task_id, (prompt || (isInpaint ? t("局部重绘") : "")).slice(0, 40));
 }
 
 /* 一键重跑：沿用上次成功任务的全部参数，种子换随机 */
@@ -267,7 +269,7 @@ async function rerunLast() {
   let inpaint = null;
   if (last.inpaint) {
     inpaint = getInpaintPayload();
-    if (!inpaint) { toast("修图重跑需要画布上还留着涂抹区域", true); return; }
+    if (!inpaint) { toast(t("修图重跑需要画布上还留着涂抹区域"), true); return; }
   }
   const body = {
     prompt: last.prompt,
@@ -298,10 +300,10 @@ async function rerunLast() {
       throw new Error(friendlyApiError({ ...err, status: res.status }));
     }
     const data = await res.json();
-    trackTask(data.task_id, (last.prompt || (last.inpaint ? "局部重绘" : "")).slice(0, 40));
-    toast("已重新提交（新随机种子）");
+    trackTask(data.task_id, (last.prompt || (last.inpaint ? t("局部重绘") : "")).slice(0, 40));
+    toast(t("已重新提交（新随机种子）"));
   } catch (e) {
-    toast(`重跑失败：${e.message}`, true);
+    toast(t("重跑失败：{m}", { m: e.message }), true);
   }
 }
 
@@ -327,3 +329,6 @@ export function bindQueueUI() {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); generate(); }
   });
 }
+
+/* 语言切换后重渲染空闲进度摘要 */
+document.addEventListener("langchange", updateIdleProgress);

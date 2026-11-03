@@ -1,5 +1,6 @@
 /* 风格（多选）/角色（单选）选择弹窗 + 制作页摘要按钮 */
 import { $, state, toast, escapeAttr } from "./core.js";
+import { t } from "./i18n.js";
 import { saveSettings } from "./settings.js";
 
 export const PICKER_MAX_STYLES = 4; // 与后端 MAX_STYLES 一致
@@ -10,22 +11,22 @@ export function syncStyleSummary() {
     .map((id) => state.styles.find((s) => s.id === id)?.name)
     .filter(Boolean);
   const el = $("style-summary");
-  el.textContent = names.length ? `风格 · ${names.length}` : "选择风格";
+  el.textContent = names.length ? t("风格 · {n}", { n: names.length }) : t("选择风格");
   el.classList.toggle("is-on", names.length > 0);
-  el.title = names.length ? names.join(" · ") : "可多选最多 4 个，弹窗里按使用频率排序";
+  el.title = names.length ? names.join(" · ") : t("可多选最多 4 个，弹窗里按使用频率排序");
   const role = state.selectedRole
     ? state.roles.find((r) => r.id === state.selectedRole) : null;
   const rel = $("role-summary");
-  rel.textContent = role ? `角色 · ${role.name}` : "选择角色";
+  rel.textContent = role ? t("角色 · {s}", { s: role.name }) : t("选择角色");
   rel.classList.toggle("is-on", !!role);
-  rel.title = role ? role.name : "单选，弹窗里按使用频率排序";
+  rel.title = role ? role.name : t("单选，弹窗里按使用频率排序");
 }
 
 export function openPicker(mode) {
   state.pickerMode = mode;
   state.pickerSelected = mode === "style" ? [...state.selectedStyles] : state.selectedRole;
   $("picker-title").textContent = mode === "style"
-    ? "选择风格（可多选，按使用频率排序）" : "选择角色";
+    ? t("选择风格（可多选，按使用频率排序）") : t("选择角色");
   $("picker-search").value = "";
   $("picker-clear").classList.toggle("hidden", mode !== "style");
   renderPickerList("");
@@ -59,19 +60,19 @@ function renderPickerList(query) {
     // 常用 TOP：用过的风格按次数排最前（分组后不再重复出现）
     const used = filtered.filter((s) => s.usage > 0);
     if (used.length) {
-      groups.set("常用 TOP", used);
+      groups.set(t("常用 TOP"), used);
       used.forEach((s) => usedIds.add(s.id));
     }
   }
   for (const it of filtered) {
     if (usedIds.has(it.id)) continue;
-    const cat = isStyle ? (it.category || "其他") : "全部角色";
+    const cat = isStyle ? (it.category || t("其他")) : t("全部角色");
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat).push(it);
   }
 
   if (!filtered.length) {
-    body.innerHTML = `<div class="py-16 text-center text-sm text-muted">没有匹配的${isStyle ? "风格" : "角色"}</div>`;
+    body.innerHTML = `<div class="py-16 text-center text-sm text-muted">${t(isStyle ? "没有匹配的风格" : "没有匹配的角色")}</div>`;
     updatePickerInfo();
     return;
   }
@@ -89,7 +90,7 @@ function renderPickerList(query) {
       const b = document.createElement("button");
       b.type = "button";
       b.dataset.id = it.id;
-      b.title = `${it.name_en || it.name}${it.usage ? ` · 已用 ${it.usage} 次` : ""}`;
+      b.title = `${it.name_en || it.name}${it.usage ? ` · ${t("已用 {n} 次", { n: it.usage })}` : ""}`;
       b.textContent = it.name;
       b.className = pickerChipClass(on);
       b.addEventListener("click", () => onPickerChip(it.id));
@@ -109,7 +110,7 @@ function onPickerChip(id) {
     if (i >= 0) sel.splice(i, 1);
     else {
       if (sel.length >= PICKER_MAX_STYLES) {
-        toast(`最多同时选 ${PICKER_MAX_STYLES} 个风格`, true);
+        toast(t("最多同时选 {n} 个风格", { n: PICKER_MAX_STYLES }), true);
         return;
       }
       sel.push(id);
@@ -132,10 +133,11 @@ function updatePickerInfo() {
       .map((id) => state.styles.find((s) => s.id === id)?.name)
       .filter(Boolean);
     $("picker-info").textContent = names.length
-      ? `已选 ${names.length}/${PICKER_MAX_STYLES}：${names.join(" · ")}` : "未选择（无风格）";
+      ? t("已选 {a}/{b}：{s}", { a: names.length, b: PICKER_MAX_STYLES, s: names.join(" · ") })
+      : t("未选择（无风格）");
   } else {
     const r = state.roles.find((x) => x.id === state.pickerSelected);
-    $("picker-info").textContent = r ? `已选：${r.name}` : "未选择（无角色）";
+    $("picker-info").textContent = r ? t("已选：{s}", { s: r.name }) : t("未选择（无角色）");
   }
 }
 
@@ -162,3 +164,11 @@ export function bindPicker() {
     if (e.key === "Escape" && !$("picker").classList.contains("hidden")) closePicker();
   });
 }
+
+/* 语言切换：摘要按钮重渲染；弹窗开着时重渲染列表 */
+document.addEventListener("langchange", () => {
+  syncStyleSummary();
+  if (!$("picker").classList.contains("hidden")) {
+    renderPickerList($("picker-search").value);
+  }
+});

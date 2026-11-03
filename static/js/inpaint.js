@@ -1,6 +1,7 @@
 /* 修图模式：上传图片 + 画笔涂抹蒙版（画笔/橡皮/撤销/清空），提交时导出白笔迹黑底蒙版。
    笔迹以图像像素坐标存储（与显示尺寸无关），蒙版导出带轻微羽化供后端软合成。 */
 import { $, state, toast, aspectClass, syncDataBlock } from "./core.js";
+import { t } from "./i18n.js";
 import { savedSettings, saveSettings } from "./settings.js";
 
 const MAX_EDGE = 1536; // 原图压缩上限（与图生图一致；服务端同值兜底）
@@ -60,7 +61,7 @@ export function loadInpaintFile(blob) {
     syncDataBlock();
     saveSettings();
   };
-  img.onerror = () => { URL.revokeObjectURL(url); toast("图片读取失败", true); };
+  img.onerror = () => { URL.revokeObjectURL(url); toast(t("图片读取失败"), true); };
   img.src = url;
 }
 
@@ -278,7 +279,7 @@ export function bindInpaint() {
     e.preventDefault();
     const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith("image/"));
     if (file) loadInpaintFile(file);
-    else toast("请拖入图片文件", true);
+    else toast(t("请拖入图片文件"), true);
   });
   $("inpaint-remove").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -301,7 +302,7 @@ export function bindInpaint() {
     if (strokes.length) { strokes.pop(); replayOverlay(); }
   });
   $("inpaint-clear").addEventListener("click", () => {
-    if (strokes.length) { strokes = []; replayOverlay(); toast("已清空涂抹"); }
+    if (strokes.length) { strokes = []; replayOverlay(); toast(t("已清空涂抹")); }
   });
   $("inpaint-strength").addEventListener("input", () => {
     $("inpaint-strength-val").textContent = Number($("inpaint-strength").value).toFixed(2);

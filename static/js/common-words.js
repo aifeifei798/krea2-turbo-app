@@ -1,5 +1,6 @@
 /* 通用词：放在每次生成提示词最前的画质/质量词，弹窗编辑 + 快捷词 */
 import { $, state, toast } from "./core.js";
+import { t } from "./i18n.js";
 import { saveSettings } from "./settings.js";
 
 const COMMON_PRESETS = [
@@ -18,7 +19,7 @@ export function syncCommonBadge() {
   const btn = $("common-btn");
   const on = !!state.commonWords;
   const n = commonWordsCount(state.commonWords);
-  btn.textContent = on ? `通用词 ${n}` : "通用词";
+  btn.textContent = on ? t("通用词 {n}", { n }) : t("通用词");
   btn.classList.toggle("text-accent", on);
   btn.classList.toggle("border-accent", on);
 }
@@ -42,7 +43,7 @@ function renderCommonChips() {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = words;
-    b.title = "点击追加";
+    b.title = t("点击追加");
     b.className = "px-2 py-1 rounded-sm border border-border bg-panel text-xs text-muted hover:border-accent hover:text-ink transition-colors";
     b.addEventListener("click", () => {
       const cur = $("common-text").value.trim().replace(/[,;\s]+$/, "");
@@ -56,7 +57,7 @@ function renderCommonChips() {
 function updateCommonInfo() {
   const v = $("common-text").value.trim();
   const n = commonWordsCount(v);
-  $("common-info").textContent = n ? `${n} 个词，将放在提示词最前` : "未填写";
+  $("common-info").textContent = n ? t("{n} 个词，将放在提示词最前", { n }) : t("未填写");
 }
 
 function saveCommonWords() {
@@ -65,7 +66,7 @@ function saveCommonWords() {
   saveSettings();
   syncCommonBadge();
   closeCommonDialog();
-  toast(v ? "通用词已保存，将放在提示词最前" : "通用词已清空");
+  toast(v ? t("通用词已保存，将放在提示词最前") : t("通用词已清空"));
 }
 
 export function bindCommonDialog() {
@@ -80,3 +81,6 @@ export function bindCommonDialog() {
     }
   });
 }
+
+/* 语言切换后重渲染入口按钮 */
+document.addEventListener("langchange", syncCommonBadge);

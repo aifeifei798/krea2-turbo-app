@@ -1,5 +1,6 @@
 /* 制作面板：预设渲染、比例/步数/批量/次数/种子绑定、模式切换与图生图参考图 */
 import { $, state, toast, aspectClass, syncDataBlock } from "./core.js";
+import { t } from "./i18n.js";
 import { savedSettings, saveSettings } from "./settings.js";
 import { syncStyleSummary } from "./picker.js";
 import { syncCommonBadge } from "./common-words.js";
@@ -84,7 +85,7 @@ export function bindControls() {
     e.preventDefault();
     const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith("image/"));
     if (file) readInitImage(file);
-    else toast("请拖入图片文件", true);
+    else toast(t("请拖入图片文件"), true);
   });
   $("i2i-remove").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -117,7 +118,7 @@ export function bindControls() {
     saveSettings();
   });
   $("generate-btn").addEventListener("click", generate);
-  $("refresh-btn").addEventListener("click", () => loadGallery().catch(() => toast("刷新失败", true)));
+  $("refresh-btn").addEventListener("click", () => loadGallery().catch(() => toast(t("刷新失败"), true)));
 }
 
 /* ---------- 模式切换与图生图参考图 ---------- */
@@ -141,6 +142,7 @@ export function renderMode() {
   const group = $("mode-group");
   group.innerHTML = "";
   [["t2i", "文生图"], ["i2i", "图生图"], ["inpaint", "修图"]].forEach(([id, label]) => {
+    label = t(label);
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
@@ -161,9 +163,9 @@ function applyModeUI() {
   $("inpaint-panel").classList.toggle("hidden", !inpaint);
   $("aspect-row").classList.toggle("hidden", inpaint); // 修图：尺寸跟原图
   $("generate-btn").innerHTML =
-    i2i ? "重绘 <span class=\"font-mono\">▸</span>"
-      : inpaint ? "修图 <span class=\"font-mono\">▸</span>"
-        : "生成 <span class=\"font-mono\">▸</span>";
+    i2i ? `${t("重绘")} <span class="font-mono">▸</span>`
+      : inpaint ? `${t("修图")} <span class="font-mono">▸</span>`
+        : `${t("生成")} <span class="font-mono">▸</span>`;
 }
 
 function setInitImage(b64, thumb) {
@@ -197,7 +199,7 @@ function readInitImageFromBlob(blob) {
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
     setInitImage(dataUrl.split(",")[1], dataUrl);
   };
-  img.onerror = () => { URL.revokeObjectURL(url); toast("图片读取失败", true); };
+  img.onerror = () => { URL.revokeObjectURL(url); toast(t("图片读取失败"), true); };
   img.src = url;
 }
 
@@ -227,8 +229,8 @@ export function reuseAsRedraw(img) {
   fetch(img.url)
     .then((r) => r.blob())
     .then(readInitImageFromBlob)
-    .catch(() => toast("参考图读取失败", true));
-  toast("已带入图生图，调整幅度后重绘");
+    .catch(() => toast(t("参考图读取失败"), true));
+  toast(t("已带入图生图，调整幅度后重绘"));
   $("prompt").focus();
 }
 
@@ -242,15 +244,21 @@ const EXAMPLES = [
 
 export function renderExamples() {
   const box = $("example-prompts");
+  box.innerHTML = "";
   EXAMPLES.forEach((p) => {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = p;
+    b.textContent = t(p);
     b.className = "px-3 py-2 rounded-sm border border-border bg-panel text-left text-xs text-muted hover:border-accent hover:text-ink transition-colors";
     b.addEventListener("click", () => {
-      $("prompt").value = p;
+      $("prompt").value = t(p);
       $("prompt").focus();
     });
     box.appendChild(b);
   });
 }
+
+document.addEventListener("langchange", () => {
+  renderMode();
+  renderExamples();
+});

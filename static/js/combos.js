@@ -1,5 +1,6 @@
 /* 风格方案：把 风格组合 + 角色 + 通用词 打包存成一键方案（localStorage 持久化） */
 import { $, state, toast, escapeHTML } from "./core.js";
+import { t } from "./i18n.js";
 import { saveSettings } from "./settings.js";
 import { syncStyleSummary } from "./picker.js";
 import { syncCommonBadge } from "./common-words.js";
@@ -25,13 +26,15 @@ const persistCombos = (list) => {
 export function syncComboBadge() {
   const n = loadCombos().length;
   const btn = $("combo-btn");
-  btn.textContent = n ? `方案 · ${n}` : "方案";
+  btn.textContent = n ? t("方案 · {n}", { n }) : t("方案");
   btn.classList.toggle("is-on", n > 0);
 }
 
 function comboHint(c) {
-  const role = c.role ? ` · 角色` : "";
-  return `${(c.styles || []).length} 个风格${role}${c.common ? " · 通用词" : ""}`;
+  const parts = [t("{n} 个风格", { n: (c.styles || []).length })];
+  if (c.role) parts.push(t("角色"));
+  if (c.common) parts.push(t("通用词"));
+  return parts.join(" · ");
 }
 
 function openComboDialog() {
@@ -50,7 +53,7 @@ function renderComboList() {
   const box = $("combo-list");
   box.innerHTML = "";
   if (!list.length) {
-    box.innerHTML = `<div class="py-8 text-center text-sm text-muted">还没有方案：配好风格/角色/通用词后，起个名字保存</div>`;
+    box.innerHTML = `<div class="py-8 text-center text-sm text-muted">${t("还没有方案：配好风格/角色/通用词后，起个名字保存")}</div>`;
     syncComboBadge();
     return;
   }
@@ -58,18 +61,18 @@ function renderComboList() {
     const row = document.createElement("div");
     row.className = "flex items-center gap-2 border border-border rounded-md bg-panel px-2.5 py-2";
     row.innerHTML = `
-      <button type="button" data-apply="${i}" class="flex-1 min-w-0 text-left" title="点击套用">
+      <button type="button" data-apply="${i}" class="flex-1 min-w-0 text-left" title="${t("点击套用")}">
         <div class="text-sm truncate">${escapeHTML(c.name)}</div>
         <div class="text-xs font-mono text-muted truncate">${escapeHTML(comboHint(c))}</div>
       </button>
-      <button type="button" data-del="${i}" aria-label="删除方案"
+      <button type="button" data-del="${i}" aria-label="${t("删除方案")}"
         class="shrink-0 w-6 h-6 rounded-sm border border-border text-muted hover:text-danger hover:border-danger transition-colors text-sm leading-none">×</button>`;
     row.querySelector("[data-apply]").addEventListener("click", () => applyCombo(i));
     row.querySelector("[data-del]").addEventListener("click", () => {
       const name = loadCombos()[i]?.name;
       persistCombos(loadCombos().filter((_, k) => k !== i));
       renderComboList();
-      toast(`方案「${name}」已删除`);
+      toast(t("方案「{s}」已删除", { s: name }));
     });
     box.appendChild(row);
   });
@@ -78,9 +81,9 @@ function renderComboList() {
 
 function saveCurrentCombo() {
   const name = $("combo-name").value.trim();
-  if (!name) { toast("先给方案起个名字", true); return; }
+  if (!name) { toast(t("先给方案起个名字"), true); return; }
   if (!state.selectedStyles.length && !state.selectedRole && !state.commonWords) {
-    toast("当前没有可保存的选择", true);
+    toast(t("当前没有可保存的选择"), true);
     return;
   }
   const list = loadCombos();
@@ -95,7 +98,7 @@ function saveCurrentCombo() {
   else list.push(entry);
   persistCombos(list);
   renderComboList();
-  toast(i >= 0 ? `方案「${name}」已更新` : `方案「${name}」已保存`);
+  toast(i >= 0 ? t("方案「{s}」已更新", { s: name }) : t("方案「{s}」已保存", { s: name }));
 }
 
 function applyCombo(i) {
@@ -110,7 +113,7 @@ function applyCombo(i) {
   syncCommonBadge();
   saveSettings();
   closeComboDialog();
-  toast(`已应用方案「${c.name}」`);
+  toast(t("已应用方案「{s}」", { s: c.name }));
 }
 
 export function bindCombos() {
@@ -125,3 +128,9 @@ export function bindCombos() {
   });
   syncComboBadge();
 }
+
+/* 语言切换：入口按钮重渲染；弹窗开着时重渲染列表 */
+document.addEventListener("langchange", () => {
+  syncComboBadge();
+  if (!$("combo-dialog").classList.contains("hidden")) renderComboList();
+});

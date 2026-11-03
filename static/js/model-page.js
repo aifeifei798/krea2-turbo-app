@@ -1,5 +1,6 @@
 /* 模型页：状态轮询、精度选择、加载/卸载；顶栏状态徽标与加载覆盖层 */
 import { $, state, toast, friendlyApiError } from "./core.js";
+import { t } from "./i18n.js";
 import { saveSettings } from "./settings.js";
 import { renderLoras } from "./lora.js";
 
@@ -16,7 +17,7 @@ export async function pollStatus() {
     const st = await res.json();
     syncModelState(st);
     if (st.state === "ready") {
-      setStatus("模型就绪", "bg-accent");
+      setStatus(t("模型就绪"), "bg-accent");
       $("loading-overlay").classList.add("hidden");
       $("loading-overlay").classList.remove("flex");
       $("generate-btn").disabled = false; // 队列化提交：模型就绪即可继续加任务
@@ -29,7 +30,7 @@ export async function pollStatus() {
       return true;
     }
     if (st.state === "error") {
-      setStatus("加载失败", "bg-danger");
+      setStatus(t("加载失败"), "bg-danger");
       $("loading-overlay").classList.add("hidden");
       $("loading-overlay").classList.remove("flex");
       return true;
@@ -38,18 +39,18 @@ export async function pollStatus() {
       // 手动卸载后不弹全屏遮罩，模型页有状态卡
       $("loading-overlay").classList.add("hidden");
       $("loading-overlay").classList.remove("flex");
-      setStatus("未加载", "bg-muted");
+      setStatus(t("未加载"), "bg-muted");
       return true;
     }
     // loading：显示覆盖层 + 进度文案
     $("loading-overlay").classList.remove("hidden");
     $("loading-overlay").classList.add("flex");
-    $("load-detail").textContent = st.detail || "加载中…";
-    setStatus("加载中", "pulse-dot bg-muted");
+    $("load-detail").textContent = t(st.detail || "加载中…");
+    setStatus(t("加载中"), "pulse-dot bg-muted");
     return false;
   } catch {
-    setStatus("服务未连接", "bg-danger");
-    syncModelState({ state: "error", detail: "服务未连接" });
+    setStatus(t("服务未连接"), "bg-danger");
+    syncModelState({ state: "error", detail: t("服务未连接") });
     return false;
   }
 }
@@ -74,23 +75,26 @@ export function syncModelState(st) {
   const loading = st.state === "loading";
   const unloaded = st.state === "unloaded";
   $("model-state-text").textContent =
-    ready ? "就绪" : failed ? "失败" : loading ? "加载中" : "未加载";
+    ready ? t("就绪") : failed ? t("失败") : loading ? t("加载中") : t("未加载");
   dot.className = `w-1.5 h-1.5 rounded-full ${ready ? "bg-accent" : failed ? "bg-danger" : loading ? "pulse-dot bg-muted" : "bg-muted"}`;
   $("model-state").classList.toggle("border-accent", ready);
   $("model-state").classList.toggle("text-accent", ready);
-  $("model-detail").textContent = st.detail || "—";
+  lastDetail = st.detail || null;
+  $("model-detail").textContent = t(st.detail || "—");
   $("model-detail").classList.toggle("text-danger", failed);
   if (st.precision) state.modelPrecision = st.precision;
   syncLoadButtons(st.state);
 }
 
 /* 加载/卸载按钮态：加载在 未加载/失败/换精度 时可用；卸载在 就绪 时可用 */
+let lastDetail = null;
+
 function syncLoadButtons(modelState) {
   const loading = modelState === "loading";
   const ready = modelState === "ready";
   const samePrecision = state.selectedPrecision === state.modelPrecision;
   $("model-load-btn").disabled = loading || (ready && samePrecision);
-  $("model-load-btn").textContent = ready && !samePrecision ? "切换并重载" : "加载模型";
+  $("model-load-btn").textContent = ready && !samePrecision ? t("切换并重载") : t("加载模型");
   $("model-unload-btn").disabled = !ready || loading;
 }
 
@@ -101,6 +105,7 @@ export function renderPrecision(hints) {
   const group = $("precision-group");
   group.innerHTML = "";
   [["bf16", "BF16 全精度"], ["int8", "INT8 8bit"], ["int4", "INT4 4bit"]].forEach(([id, label]) => {
+    label = t(label);
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
@@ -130,7 +135,7 @@ const precisionClass = (on) =>
 
 function syncPrecisionHint() {
   $("precision-hint").textContent =
-    state.precisionHints[state.selectedPrecision] || "—";
+    t(state.precisionHints[state.selectedPrecision] || "—");
 }
 
 async function loadModel() {
@@ -147,7 +152,7 @@ async function loadModel() {
       throw new Error(friendlyApiError({ ...err, status: res.status }));
     }
   } catch (e) {
-    toast(`加载请求失败：${e.message}`, true);
+    toast(t("加载请求失败：{m}", { m: e.message }), true);
     pollStatus();
     return;
   }
@@ -161,16 +166,22 @@ async function unloadModel() {
     const res = await fetch("/api/model/unload", { method: "POST" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } catch (e) {
-    toast(`卸载失败：${e.message}`, true);
+    toast(t("卸载失败：{m}", { m: e.message }), true);
   }
   await pollStatus();
   // 卸载后 LoRA 全部回到未加载
   const loras = await fetch("/api/loras").then((r) => r.json()).catch(() => null);
   if (loras) renderLoras(loras);
-  toast("模型已卸载");
+  toast(t("模型已卸载"));
 }
 
 export function bindModel() {
   $("model-load-btn").addEventListener("click", loadModel);
   $("model-unload-btn").addEventListener("click", unloadModel);
 }
+
+/* 语言切换：精度按钮/提示与状态卡重渲染（文案已在各渲染函数里走 t()） */
+document.addEventListener("langchange", () => {
+  renderPrecision(state.precisionHints);
+  syncModelState({ state: state.modelState || "loading", detail: lastDetail });
+});

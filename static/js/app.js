@@ -10,8 +10,12 @@ import { bindModel, waitReady, renderPrecision, syncModelState } from "./model-p
 import { renderLoras } from "./lora.js";
 import { loadGallery, bindGalleryScroll, bindLightbox, setRedrawHandler } from "./gallery.js";
 import { bindInpaint } from "./inpaint.js";
+import { initI18n, applyStatic, bindLangSelect } from "./i18n.js";
 
 async function init() {
+  await initI18n();
+  applyStatic();
+  bindLangSelect();
   bindControls();
   bindNav();
   bindModel();
@@ -59,7 +63,7 @@ async function init() {
       syncModelState(modelInfo);
     }
   } catch {
-    toast("预设加载失败，请刷新页面", true);
+    toast(t("预设加载失败，请刷新页面"), true);
   }
   loadGallery().catch(() => {});
   try {

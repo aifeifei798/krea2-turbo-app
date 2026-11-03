@@ -1,4 +1,5 @@
 /* Krea 2 Turbo 工作台前端 · 基础层：共享状态、DOM/提示工具、视图切换、API 错误文案 */
+import { t } from "./i18n.js";
 "use strict";
 
 export const $ = (id) => document.getElementById(id);
@@ -79,11 +80,13 @@ export function syncDataBlock() {
   const a = currentAspect();
   $("data-steps").textContent = $("steps").value;
   $("data-size").textContent = state.mode === "inpaint"
-    ? (state.inpaintDims ? `${state.inpaintDims.width}×${state.inpaintDims.height}` : "跟原图")
+    ? (state.inpaintDims ? `${state.inpaintDims.width}×${state.inpaintDims.height}` : t("跟原图"))
     : (a.width === a.height ? `${a.width}²` : `${a.width}×${a.height}`);
   const seedVal = $("seed").value.trim();
   $("data-seed").textContent = seedVal === "" ? "auto" : seedVal;
 }
+
+document.addEventListener("langchange", syncDataBlock);
 
 /* ---------- 视图切换 ---------- */
 

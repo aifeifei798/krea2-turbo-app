@@ -1,5 +1,6 @@
 /* 画廊：分页加载、卡片、删除；灯箱查看 */
 import { $, state, toast, fmtTime, escapeHTML, escapeAttr } from "./core.js";
+import { t } from "./i18n.js";
 
 const GALLERY_PAGE = 60; // 与后端 GALLERY_PAGE_DEFAULT 对应
 
@@ -12,12 +13,12 @@ export function setRedrawHandler(fn) {
 function cardHTML(img) {
   const seedText = img.seed === null || img.seed === undefined ? "auto" : String(img.seed);
   const stylesText = (img.styles || []).map((s) => s.name).join(" · ")
-    || img.style_name || "自由发挥";
+    || img.style_name || t("自由发挥");
   const roleText = img.role ? ` · ${img.role.name}` : "";
   return `
-    <figure class="group relative border border-border rounded-md overflow-hidden bg-panel cursor-pointer" data-id="${img.id}" tabindex="0" role="button" aria-label="查看：${escapeAttr((img.prompt || "未命名图片").slice(0, 40))}">
+    <figure class="group relative border border-border rounded-md overflow-hidden bg-panel cursor-pointer" data-id="${img.id}" tabindex="0" role="button" aria-label="${escapeAttr(t("查看：{s}", { s: (img.prompt || t("未命名图片")).slice(0, 40) }))}">
       <div class="w-full aspect-[4/3] bg-panel-2 flex items-center justify-center overflow-hidden">
-        <img src="${img.url}" alt="${escapeAttr(img.prompt || "生成的图片")}" loading="lazy" class="max-w-full max-h-full w-auto h-auto object-contain">
+        <img src="${img.url}" alt="${escapeAttr(img.prompt || t("生成的图片"))}" loading="lazy" class="max-w-full max-h-full w-auto h-auto object-contain">
       </div>
       <figcaption class="absolute inset-x-0 bottom-0 hidden group-hover:block group-focus-within:block bg-paper/85 px-3 py-2">
         <div class="flex items-center gap-2 font-mono text-xs text-muted">
@@ -26,9 +27,9 @@ function cardHTML(img) {
           <span class="shrink-0">seed ${seedText}</span>
         </div>
       </figcaption>
-      <button type="button" data-redraw="${img.id}" aria-label="用这张图重绘"
-        class="absolute top-2 left-2 hidden group-hover:flex group-focus-within:flex items-center px-1.5 h-7 rounded-sm border border-border bg-paper text-muted hover:text-accent hover:border-accent transition-colors text-xs">重绘</button>
-      <button type="button" data-del="${img.id}" aria-label="删除这张图片"
+      <button type="button" data-redraw="${img.id}" aria-label="${t("用这张图重绘")}"
+        class="absolute top-2 left-2 hidden group-hover:flex group-focus-within:flex items-center px-1.5 h-7 rounded-sm border border-border bg-paper text-muted hover:text-accent hover:border-accent transition-colors text-xs">${t("重绘")}</button>
+      <button type="button" data-del="${img.id}" aria-label="${t("删除这张图片")}"
         class="absolute top-2 right-2 hidden group-hover:flex group-focus-within:flex w-7 h-7 items-center justify-center rounded-sm border border-border bg-paper text-muted hover:text-danger hover:border-danger transition-colors text-sm">×</button>
     </figure>`;
 }
@@ -123,7 +124,7 @@ async function deleteImage(id) {
     const res = await fetch(`/api/images/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } catch (e) {
-    toast(`删除失败：${e.message}`, true);
+    toast(t("删除失败：{m}", { m: e.message }), true);
     return;
   }
   state.images = state.images.filter((i) => i.id !== id);
@@ -132,7 +133,7 @@ async function deleteImage(id) {
   document.querySelector(`figure[data-id="${CSS.escape(id)}"]`)?.remove();
   if (!state.images.length) $("empty-state").classList.remove("hidden");
   if (lightboxId === id) closeLightbox();
-  toast("已删除");
+  toast(t("已删除"));
 }
 
 /* ---------- 灯箱 ---------- */
@@ -147,22 +148,22 @@ function openLightbox(id) {
   lightboxId = id;
   disarmDelete();
   $("lb-img").src = img.url;
-  $("lb-img").alt = img.prompt || "生成的图片";
-  $("lb-prompt").textContent = img.prompt || "（提示词缺失）";
+  $("lb-img").alt = img.prompt || t("生成的图片");
+  $("lb-prompt").textContent = img.prompt || t("（提示词缺失）");
   const seedText = img.seed === null || img.seed === undefined ? "auto" : String(img.seed);
   const loraText = (img.loras || []).map((l) => `${l.name} ${l.weight.toFixed(2)}`).join(" · ");
   $("lb-meta").innerHTML = [
-    ["风格", (img.styles || []).map((s) => s.name).join(" · ") || img.style_name || "—"],
-    ...(img.role ? [["角色", img.role.name]] : []),
-    ...(img.common ? [["通用词", img.common]] : []),
-    ["尺寸", img.width ? `${img.width}×${img.height}` : "—"],
-    ["步数", img.steps || "—"],
-    ["种子", seedText],
-    ...((img.rounds || 1) > 1 ? [["次数", `${img.rounds} 轮 · 每轮 ${img.batch || 1} 张`]] : []),
-    ...(img.strength != null ? [["重绘幅度", Number(img.strength).toFixed(2)]] : []),
-    ...(loraText ? [["LoRA", loraText]] : []),
-    ["时间", img.created_at ? fmtTime(img.created_at) : "—"],
-    ["模型", img.model || "Krea 2 Turbo"],
+    [t("风格"), (img.styles || []).map((s) => s.name).join(" · ") || img.style_name || "—"],
+    ...(img.role ? [[t("角色"), img.role.name]] : []),
+    ...(img.common ? [[t("通用词"), img.common]] : []),
+    [t("尺寸"), img.width ? `${img.width}×${img.height}` : "—"],
+    [t("步数"), img.steps || "—"],
+    [t("种子"), seedText],
+    ...((img.rounds || 1) > 1 ? [[t("次数"), t("{a} 轮 · 每轮 {b} 张", { a: img.rounds, b: img.batch || 1 })]] : []),
+    ...(img.strength != null ? [[t("重绘幅度"), Number(img.strength).toFixed(2)]] : []),
+    ...(loraText ? [[t("LoRA"), loraText]] : []),
+    [t("时间"), img.created_at ? fmtTime(img.created_at) : "—"],
+    [t("模型"), img.model || "Krea 2 Turbo"],
   ].map(([k, v]) => `<div class="flex gap-2"><dt class="shrink-0">${k}</dt><dd class="text-ink truncate" title="${escapeAttr(v)}">${escapeHTML(v)}</dd></div>`).join("");
   $("lb-download").href = img.url;
   $("lb-download").setAttribute("download", `${id}.jpg`);
@@ -195,7 +196,7 @@ function disarmDelete() {
   deleteArmed = false;
   clearTimeout(deleteTimer);
   const btn = $("lb-delete");
-  btn.textContent = "删除";
+  btn.textContent = t("删除");
   btn.classList.remove("text-danger", "border-danger");
 }
 
@@ -230,19 +231,19 @@ export function bindLightbox() {
   }, { passive: false });
   $("lb-copy").addEventListener("click", async () => {
     const img = state.images.find((i) => i.id === lightboxId);
-    if (!img?.prompt) { toast("这张图没有提示词可复制", true); return; }
+    if (!img?.prompt) { toast(t("这张图没有提示词可复制"), true); return; }
     try {
       await navigator.clipboard.writeText(img.prompt);
-      toast("提示词已复制");
+      toast(t("提示词已复制"));
     } catch {
-      toast("复制失败（浏览器未授权剪贴板）", true);
+      toast(t("复制失败（浏览器未授权剪贴板）"), true);
     }
   });
   $("lb-delete").addEventListener("click", () => {
     if (!deleteArmed) {
       deleteArmed = true;
       const btn = $("lb-delete");
-      btn.textContent = "确认删除？";
+      btn.textContent = t("确认删除？");
       btn.classList.add("text-danger", "border-danger");
       deleteTimer = setTimeout(disarmDelete, 3000);
       return;
@@ -250,3 +251,10 @@ export function bindLightbox() {
     if (lightboxId) deleteImage(lightboxId);
   });
 }
+
+/* 语言切换后重建卡片（已加载的窗口内本地重绘，不重新拉取） */
+document.addEventListener("langchange", () => {
+  const gallery = $("gallery");
+  gallery.innerHTML = "";
+  if (state.images.length) gallery.appendChild(buildCards(state.images));
+});
