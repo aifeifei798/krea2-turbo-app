@@ -83,6 +83,7 @@ class GenRequest:
     seed: int | None = None
     batch: int = 1
     rounds: int = 1  # 跑几轮：每轮独立管线调用（batch 张/轮），种子逐轮 +1
+    common: str = ""  # 通用词：放在提示词最前（画质词等，每次生成都带）
     init_image: str | None = None  # base64 参考图（有值 = 图生图重绘）
     strength: float = 0.6  # 重绘幅度 0-1：越大越偏离原图
     loras: list[tuple[str, float]] = field(default_factory=list)  # (lora_id, weight)
@@ -431,6 +432,7 @@ def _new_task(req: GenRequest) -> dict:
             "styles": [{"id": sid, "name": get_style(sid)["name"]}
                        for sid in req.styles if get_style(sid)["id"] == sid],
             "role": {"id": role["id"], "name": role["name"]} if role else None,
+            "common": req.common.strip() or None,
             "aspect_id": aspect["id"],
             "width": aspect["width"],
             "height": aspect["height"],
@@ -474,6 +476,7 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
         "seed": seed,
         "batch": task["request"]["batch"],
         "rounds": task["request"]["rounds"],
+        "common": task["request"]["common"],
         **({"strength": task["request"]["strength"]}
            if task["request"]["img2img"] else {}),
         "loras": task["request"]["loras"],
@@ -483,8 +486,8 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
     (OUTPUT_DIR / f"{stem}.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    keys = ("prompt", "styles", "role", "width", "height", "steps", "seed",
-            "batch", "rounds", "loras", "created_at")
+    keys = ("prompt", "styles", "role", "common", "width", "height", "steps",
+            "seed", "batch", "rounds", "loras", "created_at")
     if task["request"]["img2img"]:
         keys += ("strength",)
     return {"id": stem, "url": f"/outputs/{stem}.jpg", **{k: meta[k] for k in keys}}
@@ -509,6 +512,9 @@ def _run_task(req: GenRequest) -> None:
         role = get_role(req.role)
         if role and role["prompt"]:
             full_prompt = f"{role['prompt'].rstrip(',; ')}, {full_prompt}"
+        # 通用词放最前（画质词等）
+        if req.common.strip():
+            full_prompt = f"{req.common.strip().rstrip(',; ')}, {full_prompt}"
 
         # 缺的 LoRA 自动补加载（常驻，不卸载）；无请求时全部去激活
         sync_loras(req.loras)
@@ -612,6 +618,7 @@ def start_background() -> None:
 def enqueue(prompt: str, aspect_id: str, steps: int,
             seed: int | None, batch: int, rounds: int = 1,
             styles: list[str] | None = None, role: str | None = None,
+            common: str = "",
             init_image: str | None = None, strength: float = 0.6,
             loras: list[tuple[str, float]] | None = None) -> str:
     req = GenRequest(
@@ -619,6 +626,7 @@ def enqueue(prompt: str, aspect_id: str, steps: int,
         prompt=prompt,
         styles=styles or [],
         role=role,
+        common=common,
         aspect_id=aspect_id,
         steps=steps,
         seed=seed,

@@ -54,6 +54,7 @@ class GenerateIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     styles: list[str] = Field(default_factory=list, max_length=MAX_STYLES)
     role: str | None = None
+    common: str = Field(default="", max_length=600)  # 通用词（提示词最前）
     aspect: str = "1:1"
     steps: int = Field(default=DEFAULT_STEPS, ge=2, le=MAX_STEPS)
     seed: int | None = Field(default=None, ge=0, le=2**63 - 1)  # torch.Generator 上限
@@ -154,7 +155,7 @@ def generate(body: GenerateIn):
     task_id = pipeline.enqueue(
         prompt=body.prompt, aspect_id=body.aspect,
         steps=body.steps, seed=body.seed, batch=body.batch, rounds=body.rounds,
-        styles=styles, role=body.role,
+        styles=styles, role=body.role, common=body.common.strip(),
         init_image=body.init_image, strength=body.strength,
         loras=[(l.id, l.weight) for l in body.loras])
     return {"task_id": task_id}
