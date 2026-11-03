@@ -181,6 +181,10 @@
             <span id="progress-pct" class="pulse-dot">0%</span>
           </div>
         </div>
+        <button id="cancel-btn" type="button" aria-label="停止生成本次任务"
+          class="hidden mt-2 w-full h-9 rounded-md border border-border bg-panel text-sm text-muted hover:text-danger hover:border-danger transition-colors">
+          停止生成
+        </button>
       </div>
     </section>
 
@@ -207,6 +211,10 @@
       <div id="gallery" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
         <!-- JS 填充图片卡片 -->
       </div>
+
+      <!-- 无限滚动哨兵 + 加载指示 -->
+      <div id="gallery-sentinel" class="h-px" aria-hidden="true"></div>
+      <div id="gallery-more" class="hidden py-3 text-center text-xs font-mono text-muted">加载中…</div>
     </section>
     </div><!-- /view-studio -->
 

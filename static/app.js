@@ -21,6 +21,9 @@ const state = {
   modelPrecision: null,
   generating: false,
   shownTaskImages: 0, // 当前任务已插入画廊的图片数（次数模式边跑边出图）
+  galleryTotal: 0, // 服务端作品总数（分页：本地只载窗口）
+  galleryHasMore: false,
+  loadingMore: false,
   currentTask: null,
   pollTimer: null,
   images: [],
@@ -425,7 +428,12 @@ function bindControls() {
     saveSettings();
   });
   $("generate-btn").addEventListener("click", generate);
+  $("cancel-btn").addEventListener("click", cancelTask);
   $("refresh-btn").addEventListener("click", () => loadGallery().catch(() => toast("刷新失败", true)));
+  // 提示词里 Ctrl/Cmd+Enter 直接提交
+  $("prompt").addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); generate(); }
+  });
 }
 
 /* ---------- 模式切换与图生图参考图 ---------- */
@@ -665,7 +673,9 @@ function setGenerating(on) {
   const btn = $("generate-btn");
   btn.disabled = on || !state.modelReady;
   $("progress-wrap").classList.toggle("hidden", !on);
+  $("cancel-btn").classList.toggle("hidden", !on);
   if (on) {
+    $("cancel-btn").disabled = false;
     btn.innerHTML = '生成中 <span class="font-mono">…</span>';
     setProgress(0, 1, "排队中…");
   } else {
@@ -737,8 +747,22 @@ function showTaskImages(task) {
   if (!fresh.length) return;
   state.shownTaskImages = task.images.length;
   state.images.unshift(...fresh);
+  state.galleryTotal += fresh.length;
   insertCards(fresh);
-  $("gallery-count").textContent = String(state.images.length);
+  $("gallery-count").textContent = String(state.galleryTotal);
+}
+
+/* 请求停止当前/排队任务：当前轮丢弃，已完成轮保留 */
+async function cancelTask() {
+  if (!state.currentTask) return;
+  try {
+    const res = await fetch(`/api/tasks/${state.currentTask}/cancel`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    $("cancel-btn").disabled = true;
+    toast("已请求停止，当前轮丢弃、已完成轮保留");
+  } catch (e) {
+    toast(`停止失败：${e.message}`, true);
+  }
 }
 
 function pollTask(taskId) {
@@ -769,13 +793,14 @@ function pollTask(taskId) {
       return;
     }
     clearInterval(state.pollTimer);
-    showTaskImages(task); // 失败前已出的图也保留
+    showTaskImages(task); // 失败/取消前已出的图也保留
     if (task.state === "error") {
       toast(`生成失败：${task.error}`, true);
       setGenerating(false);
       return;
     }
-    setProgress(task.total_steps, task.total_steps, "完成");
+    if (task.canceled) toast(`已停止，保留了 ${task.images.length} 张已完成的图`);
+    setProgress(task.total_steps, task.total_steps, task.canceled ? "已停止" : "完成");
     setTimeout(() => setGenerating(false), 400);
   }, 500);
 }
@@ -807,14 +832,74 @@ function escapeHTML(s) {
 }
 const escapeAttr = escapeHTML;
 
-function insertCards(images) {
-  if (!images.length) return;
-  $("empty-state").classList.add("hidden");
-  const gallery = $("gallery");
+function buildCards(images) {
   const frag = document.createElement("template");
   frag.innerHTML = images.map(cardHTML).join("");
   frag.content.querySelectorAll("figure").forEach(bindCard);
-  gallery.prepend(frag.content);
+  return frag.content;
+}
+
+/* 顶部插入（新生成的图） */
+function insertCards(images) {
+  if (!images.length) return;
+  $("empty-state").classList.add("hidden");
+  $("gallery").prepend(buildCards(images));
+}
+
+/* 尾部追加（画廊翻页） */
+function appendCards(images) {
+  if (!images.length) return;
+  $("empty-state").classList.add("hidden");
+  $("gallery").appendChild(buildCards(images));
+}
+
+const GALLERY_PAGE = 60; // 与后端 GALLERY_PAGE_DEFAULT 对应
+
+async function loadGallery() {
+  const data = await fetch(`/api/images?limit=${GALLERY_PAGE}`).then((r) => r.json());
+  state.images = data.items;
+  state.galleryTotal = data.total;
+  state.galleryHasMore = data.has_more;
+  const gallery = $("gallery");
+  gallery.innerHTML = "";
+  $("gallery-count").textContent = String(state.galleryTotal);
+  $("gallery-more").classList.toggle("hidden", !state.galleryHasMore);
+  if (!state.images.length) {
+    $("empty-state").classList.remove("hidden");
+    return;
+  }
+  $("empty-state").classList.add("hidden");
+  gallery.appendChild(buildCards(state.images));
+}
+
+/* 滚动到底加载下一页（游标 = 已载末条 created_at:id；加载期间插入的新图按 id 去重） */
+async function loadMoreGallery() {
+  if (!state.galleryHasMore || state.loadingMore) return;
+  const last = state.images[state.images.length - 1];
+  if (!last) return;
+  state.loadingMore = true;
+  $("gallery-more").classList.remove("hidden");
+  try {
+    const cursor = encodeURIComponent(`${last.created_at}:${last.id}`);
+    const data = await fetch(`/api/images?limit=${GALLERY_PAGE}&before=${cursor}`)
+      .then((r) => r.json());
+    const known = new Set(state.images.map((i) => i.id));
+    const fresh = data.items.filter((i) => !known.has(i.id));
+    state.images.push(...fresh);
+    state.galleryHasMore = data.has_more;
+    appendCards(fresh);
+    $("gallery-count").textContent = String(state.galleryTotal);
+  } catch { /* 拉取失败静默，滚动再试 */ } finally {
+    state.loadingMore = false;
+    $("gallery-more").classList.toggle("hidden", !state.galleryHasMore);
+  }
+}
+
+/* 画廊底部哨兵：进入视口（提前 400px）即翻页 */
+function bindGalleryScroll() {
+  new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) loadMoreGallery();
+  }, { rootMargin: "400px" }).observe($("gallery-sentinel"));
 }
 
 function bindCard(fig) {
@@ -829,23 +914,6 @@ function bindCard(fig) {
   });
 }
 
-async function loadGallery() {
-  const res = await fetch("/api/images");
-  state.images = await res.json();
-  const gallery = $("gallery");
-  gallery.innerHTML = "";
-  $("gallery-count").textContent = String(state.images.length);
-  if (!state.images.length) {
-    $("empty-state").classList.remove("hidden");
-    return;
-  }
-  $("empty-state").classList.add("hidden");
-  const frag = document.createElement("template");
-  frag.innerHTML = state.images.map(cardHTML).join("");
-  frag.content.querySelectorAll("figure").forEach(bindCard);
-  gallery.appendChild(frag.content);
-}
-
 async function deleteImage(id) {
   try {
     const res = await fetch(`/api/images/${id}`, { method: "DELETE" });
@@ -855,7 +923,8 @@ async function deleteImage(id) {
     return;
   }
   state.images = state.images.filter((i) => i.id !== id);
-  $("gallery-count").textContent = String(state.images.length);
+  state.galleryTotal = Math.max(0, state.galleryTotal - 1);
+  $("gallery-count").textContent = String(state.galleryTotal);
   document.querySelector(`figure[data-id="${CSS.escape(id)}"]`)?.remove();
   if (!state.images.length) $("empty-state").classList.remove("hidden");
   if (lightboxId === id) closeLightbox();
@@ -989,6 +1058,7 @@ async function init() {
     el.classList.add("hidden");
   });
   renderExamples();
+  bindGalleryScroll();
   try {
     const [presets, modelInfo] = await Promise.all([
       fetch("/api/presets").then((r) => r.json()),

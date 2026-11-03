@@ -154,6 +154,13 @@ def task_status(task_id: str):
     return task
 
 
+@app.post("/api/tasks/{task_id}/cancel")
+def task_cancel(task_id: str):
+    if not pipeline.cancel_task(task_id):
+        raise HTTPException(404, "任务不存在或已结束")
+    return {"ok": True}
+
+
 def _load_meta(stem: str) -> dict | None:
     meta_path = OUTPUT_DIR / f"{stem}.json"
     if not meta_path.exists():
@@ -164,10 +171,15 @@ def _load_meta(stem: str) -> dict | None:
         return None
 
 
+GALLERY_PAGE_DEFAULT = 60  # 画廊单页数量
+
+
 @app.get("/api/images")
-def list_images():
+def list_images(limit: int = GALLERY_PAGE_DEFAULT, before: str | None = None):
+    """画廊分页：按 (created_at, id) 倒序；before 为上一页末条 "created_at:id" 游标。
+    游标失效（图被删等）时从头重给，前端按 id 去重兜底。"""
     if not OUTPUT_DIR.exists():
-        return []
+        return {"items": [], "total": 0, "has_more": False}
     metas = []
     for jpg in OUTPUT_DIR.glob("*.jpg"):
         meta = _load_meta(jpg.stem)
@@ -179,7 +191,23 @@ def list_images():
         meta["url"] = f"/outputs/{jpg.name}"
         metas.append(meta)
     metas.sort(key=lambda m: (m["created_at"], m["id"]), reverse=True)
-    return metas
+    total = len(metas)
+
+    start = 0
+    if before:
+        try:
+            ts, sid = before.rsplit(":", 1)
+            key = (int(ts), sid)
+            start = next((i for i, m in enumerate(metas)
+                          if (m["created_at"], m["id"]) == key), -1) + 1
+        except ValueError:
+            start = 0
+        if start <= 0:
+            start = 0  # 游标失效：从头重给
+    limit = max(1, min(limit, 200))
+    page = metas[start:start + limit]
+    return {"items": page, "total": total,
+            "has_more": start + len(page) < total}
 
 
 @app.delete("/api/images/{image_id}")
