@@ -1,4 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="oklch(17% 0.015 250)"/>
-  <text x="16" y="23" font-size="20" text-anchor="middle" fill="oklch(80% 0.14 195)" font-family="monospace" font-weight="bold">K</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Krea 2 Turbo · 深色底 + 电光青闪电（蒸馏加速） -->
+  <defs>
+    <linearGradient id="bolt" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#7FEDEF"/>
+      <stop offset="1" stop-color="#28B7C6"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#0A1016" stroke="#262B33" stroke-width="2"/>
+  <path d="M37 9 L18 35 L29 35 L25 55 L47 26 L34 26 Z" fill="url(#bolt)"/>
+  <path d="M25 55 L29 35 L20 35 Z" fill="#1A8FA0" opacity="0.55"/>
 </svg>

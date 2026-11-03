@@ -11,6 +11,17 @@
 
   <!-- 顶栏 -->
   <header class="shrink-0 flex items-center gap-3 px-4 md:px-6 h-14 border-b border-border">
+    <svg aria-hidden="true" width="26" height="26" viewBox="0 0 64 64" class="shrink-0">
+      <defs>
+        <linearGradient id="logo-bolt" x1="0" y1="0" x2="0.6" y2="1">
+          <stop offset="0" stop-color="#7FEDEF"/>
+          <stop offset="1" stop-color="#28B7C6"/>
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="60" height="60" rx="14" fill="#0A1016" stroke="#262B33" stroke-width="3"/>
+      <path d="M37 9 L18 35 L29 35 L25 55 L47 26 L34 26 Z" fill="url(#logo-bolt)"/>
+      <path d="M25 55 L29 35 L20 35 Z" fill="#1A8FA0" opacity="0.55"/>
+    </svg>
     <span class="font-display font-bold text-lg tracking-tight">KREA&nbsp;2&nbsp;<span class="text-accent">TURBO</span></span>
     <span class="text-muted text-xs font-mono hidden md:inline">12B · 8 步蒸馏 · 本地推理</span>
     <nav class="ml-4 md:ml-6 flex items-center gap-1" aria-label="页面导航">
@@ -364,6 +375,6 @@
   <!-- Toast -->
   <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] hidden px-4 py-2.5 rounded-md border border-border bg-panel-2 text-sm shadow-lg" role="alert"></div>
 
-  <script src="app.js?v=10"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>
