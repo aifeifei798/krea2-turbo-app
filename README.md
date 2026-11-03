@@ -84,6 +84,12 @@ bun run css:build
 
 模型/LoRA 目录写进 `.env`（`KREA_MODEL_DIR` / `KREA_LORA_DIR`，参考 `.env.example`；预量化目录 `KREA_MODEL_INT8_DIR`/`KREA_MODEL_INT4_DIR` 可选），改后 `./server.sh restart` 生效。
 
+**API 访问密钥（必填）**：`.env` 的 `KREA_API_KEY`——所有 `/api/*` 接口要求 `X-API-Key` 头，浏览器 UI 首次打开时弹窗输入一次（存 localStorage）。生成：`openssl rand -hex 16`；`./server.sh start` 缺失时会自动生成并写回 `.env`，`./server.sh key` 随时查看。脚本/curl 调用示例：
+
+```bash
+curl -H "X-API-Key: $(./server.sh key)" http://127.0.0.1:8420/api/status
+```
+
 ## 结构
 
 ```

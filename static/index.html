@@ -454,6 +454,28 @@
     </div>
   </div>
 
+  <!-- API 密钥弹窗（401 时自动弹出） -->
+  <div id="apikey-dialog" class="hidden fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="API 密钥" data-i18n-aria="API 密钥">
+    <div class="absolute inset-0 bg-paper/90"></div>
+    <div class="absolute inset-x-4 top-1/2 -translate-y-1/2 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-sm flex flex-col border border-border rounded-lg bg-paper shadow-lg pointer-events-auto">
+      <div class="flex items-center px-4 py-3 border-b border-border">
+        <span class="text-sm font-mono text-ink" data-i18n="API 密钥">API 密钥</span>
+      </div>
+      <div class="p-4 flex flex-col gap-3">
+        <p class="text-xs text-muted leading-relaxed" data-i18n="此服务的 API 已开启访问控制：请输入 .env 里 KREA_API_KEY 的值，输入一次后会记住">此服务的 API 已开启访问控制：请输入 .env 里 KREA_API_KEY 的值，输入一次后会记住</p>
+        <input id="apikey-input" type="password" autocomplete="off" placeholder="粘贴密钥后回车" data-i18n-ph="粘贴密钥后回车"
+          class="w-full bg-panel border border-border rounded-md px-3 py-2 text-sm font-mono placeholder:text-muted/60 focus:border-accent">
+      </div>
+      <div class="flex items-center gap-3 px-4 py-2.5 border-t border-border">
+        <span id="apikey-error" class="text-xs font-mono text-danger truncate"></span>
+        <button id="apikey-cancel" type="button"
+          class="ml-auto px-3 py-1.5 rounded-sm border border-border text-xs text-muted hover:text-ink hover:border-accent transition-colors" data-i18n="取消">取消</button>
+        <button id="apikey-save" type="button"
+          class="px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="保存">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] hidden px-4 py-2.5 rounded-md border border-border bg-panel-2 text-sm shadow-lg" role="alert"></div>
 

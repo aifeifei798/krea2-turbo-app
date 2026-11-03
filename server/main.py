@@ -3,6 +3,7 @@
 启动：.venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port 8420
 """
 
+import hmac
 import json
 import logging
 import threading
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -25,6 +27,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 OUTPUT_DIR = BASE_DIR / "outputs"
 
+# API 访问密钥：必须配置（.env 的 KREA_API_KEY），缺失直接拒绝启动
+try:
+    API_KEY = paths.get_api_key()
+except paths.ApiKeyNotConfigured as exc:
+    raise SystemExit(f"启动失败：{exc}") from None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,6 +41,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Krea 2 Turbo 工作台", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def api_key_guard(request, call_next):
+    """/api/* 一律校验 X-API-Key（UI 首次访问会弹窗收集并存储）；其余路径（页面/图片）开放。"""
+    if request.url.path.startswith("/api"):
+        given = request.headers.get("X-API-Key", "")
+        if not hmac.compare_digest(given, API_KEY):
+            return JSONResponse({"detail": "API 密钥缺失或不正确"}, status_code=401)
+    return await call_next(request)
 
 
 @app.middleware("http")

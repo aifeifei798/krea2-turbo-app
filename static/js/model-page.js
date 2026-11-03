@@ -1,5 +1,5 @@
 /* 模型页：状态轮询、精度选择、加载/卸载；顶栏状态徽标与加载覆盖层 */
-import { $, state, toast, friendlyApiError } from "./core.js";
+import { $, state, toast, friendlyApiError, apiFetch } from "./core.js";
 import { t } from "./i18n.js";
 import { saveSettings } from "./settings.js";
 import { renderLoras } from "./lora.js";
@@ -13,7 +13,7 @@ function setStatus(text, colorClass) {
 
 export async function pollStatus() {
   try {
-    const res = await fetch("/api/status");
+    const res = await apiFetch("/api/status");
     const st = await res.json();
     syncModelState(st);
     if (st.state === "ready") {
@@ -23,7 +23,7 @@ export async function pollStatus() {
       $("generate-btn").disabled = false; // 队列化提交：模型就绪即可继续加任务
       // 精度切换后（新模型实例）LoRA 由后端重新全量加载，刷新一次同步开关与默认强度
       if (state.modelPrecision !== null && state.modelPrecision !== st.precision) {
-        const loras = await fetch("/api/loras").then((r) => r.json()).catch(() => null);
+        const loras = await apiFetch("/api/loras").then((r) => r.json()).catch(() => null);
         if (loras) renderLoras(loras);
       }
       state.modelPrecision = st.precision;
@@ -142,7 +142,7 @@ async function loadModel() {
   const btn = $("model-load-btn");
   btn.disabled = true;
   try {
-    const res = await fetch("/api/model/load", {
+    const res = await apiFetch("/api/model/load", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ precision: state.selectedPrecision }),
@@ -163,14 +163,14 @@ async function loadModel() {
 
 async function unloadModel() {
   try {
-    const res = await fetch("/api/model/unload", { method: "POST" });
+    const res = await apiFetch("/api/model/unload", { method: "POST" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } catch (e) {
     toast(t("卸载失败：{m}", { m: e.message }), true);
   }
   await pollStatus();
   // 卸载后 LoRA 全部回到未加载
-  const loras = await fetch("/api/loras").then((r) => r.json()).catch(() => null);
+  const loras = await apiFetch("/api/loras").then((r) => r.json()).catch(() => null);
   if (loras) renderLoras(loras);
   toast(t("模型已卸载"));
 }

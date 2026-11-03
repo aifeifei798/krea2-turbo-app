@@ -1,5 +1,5 @@
 /* Krea 2 Turbo 工作台前端 · 入口：装配各模块 + 启动初始化 */
-import { $, state, toast, bindNav } from "./core.js";
+import { $, state, toast, bindNav, apiFetch } from "./core.js";
 import { savedSettings } from "./settings.js";
 import { bindControls, renderPresets, renderExamples, renderMode, reuseAsRedraw } from "./studio.js";
 import { bindPicker } from "./picker.js";
@@ -54,8 +54,8 @@ async function init() {
   bindGalleryScroll();
   try {
     const [presets, modelInfo] = await Promise.all([
-      fetch("/api/presets").then((r) => r.json()),
-      fetch("/api/model").then((r) => r.json()).catch(() => null),
+      apiFetch("/api/presets").then((r) => r.json()),
+      apiFetch("/api/model").then((r) => r.json()).catch(() => null),
     ]);
     renderPresets(presets);
     if (modelInfo) {
@@ -67,7 +67,7 @@ async function init() {
   }
   loadGallery().catch(() => {});
   try {
-    renderLoras(await fetch("/api/loras").then((r) => r.json()));
+    renderLoras(await apiFetch("/api/loras").then((r) => r.json()));
   } catch { /* loras 目录可能为空 */ }
   waitReady();
 }

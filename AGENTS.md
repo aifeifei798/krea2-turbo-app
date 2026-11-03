@@ -24,11 +24,13 @@ node ~/.zcode/skills/design-forge/scripts/forge.mjs static/index.html static/js/
 
 ## 配置（.env）
 
-`KREA_MODEL_DIR` 必填（无代码默认值，缺失时 server.sh 预检拒绝启动并给指引）；可选 `KREA_LORA_DIR`、`KREA_MODEL_INT8_DIR`、`KREA_MODEL_INT4_DIR`、`KREA_LORA_AUTLOAD=0`。见 `.env.example`。server.sh 启动时自动 source `.env`。`.env` 本体 gitignored。
+`KREA_MODEL_DIR` 与 `KREA_API_KEY` 必填（无代码默认值；模型目录缺失时 server.sh 预检拒绝启动，API key 缺失时 server.sh start/run 自动生成写回 `.env`，main.py 导入时二次硬校验）。可选 `KREA_LORA_DIR`、`KREA_MODEL_INT8_DIR`、`KREA_MODEL_INT4_DIR`、`KREA_LORA_AUTLOAD=0`。见 `.env.example`。server.sh 启动时自动 source `.env`。`.env` 本体 gitignored。
+
+**API 访问控制**：所有 `/api/*` 请求要求 `X-API-Key` 头（`hmac.compare_digest` 常量时间比较，401 拒绝）；静态页面/图片/语言包开放。前端统一走 core.js 的 `apiFetch()`——自动附头，401 弹窗收集（密钥存 localStorage `krea2-api-key`）后自动重试一次；新增接口也必须走它。脚本/curl 调试带 `-H "X-API-Key: $(./server.sh key)"`；server.sh 内部 curl 已自带；查当前密钥 `./server.sh key`。
 
 ## 架构边界（改代码前必读）
 
-- **前端依赖单向无环**：core.js（state/$/toast/escape/friendlyApiError/syncDataBlock）← settings.js ← {lora, picker, common-words} ← {model-page, studio, queue} ← gallery；app.js 只做装配。新增共享工具放 core.js，不要制造反向引用。
+- **前端依赖单向无环**：i18n.js（叶子，不依赖任何模块）→ core.js（state/$/toast/escape/friendlyApiError/apiFetch/syncDataBlock）← settings.js ← {lora, picker, common-words} ← {model-page, studio, queue} ← gallery；app.js 只做装配。新增共享工具放 core.js，不要制造反向引用。
 - **模块顶层 const 不挂 window**：浏览器 evaluate/控制台看不到 `state`，调试用 DOM 断言。
 - **后端队列**：单 worker 串行；整个生成持 `_model_lock`（卸载/精度切换会等生成结束）；LoRA 开关 acquire(timeout=2s) 忙时 409。
 - **Prompt 拼装顺序**（pipeline._run_task）：通用词 → 角色描述前置 → 风格模板按选择顺序嵌套 `{prompt}` → 用户提示词。

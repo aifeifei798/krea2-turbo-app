@@ -1,5 +1,5 @@
 /* 生成队列：提交、串行轮询进度、右上角队列弹层、取消（单条/全部）、当前进度条 */
-import { $, state, toast, escapeHTML, escapeAttr, friendlyApiError, syncDataBlock } from "./core.js";
+import { $, state, toast, escapeHTML, escapeAttr, friendlyApiError, syncDataBlock, apiFetch } from "./core.js";
 import { saveSettings } from "./settings.js";
 import { insertCards } from "./gallery.js";
 import { activeLoras } from "./lora.js";
@@ -90,7 +90,7 @@ async function pollActiveTasks() {
   await Promise.all(ids.map(async (taskId) => {
     let task;
     try {
-      const res = await fetch(`/api/tasks/${taskId}`);
+      const res = await apiFetch(`/api/tasks/${taskId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       task = await res.json();
     } catch (e) {
@@ -148,7 +148,7 @@ async function cancelQueuedTask(taskId) {
   const row = document.querySelector(`[data-task="${taskId}"]`);
   const isRunning = row?.dataset.running === "1";
   try {
-    const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+    const res = await apiFetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (isRunning) {
       updateQueueRow(taskId, t("停止中…"), null, false);
@@ -166,7 +166,7 @@ async function cancelAllQueued() {
   const ids = Object.keys(state.activeTasks);
   if (!ids.length) return;
   await Promise.allSettled(
-    ids.map((id) => fetch(`/api/tasks/${id}/cancel`, { method: "POST" })));
+    ids.map((id) => apiFetch(`/api/tasks/${id}/cancel`, { method: "POST" })));
   ids.forEach((id) => {
     const row = document.querySelector(`[data-task="${id}"]`);
     if (row?.dataset.running === "1") updateQueueRow(id, t("停止中…"), null, false);
@@ -243,7 +243,7 @@ export async function generate() {
 
   let data;
   try {
-    const res = await fetch("/api/generate", {
+    const res = await apiFetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -290,7 +290,7 @@ async function rerunLast() {
     loras: activeLoras(),
   };
   try {
-    const res = await fetch("/api/generate", {
+    const res = await apiFetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

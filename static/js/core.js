@@ -139,3 +139,57 @@ export function friendlyApiError(err) {
   if (typeof err?.detail === "string") return err.detail;
   return `HTTP ${err?.status || ""}`.trim() || "未知错误";
 }
+
+/* ---------- API 访问密钥（.env 的 KREA_API_KEY；401 时弹窗收集） ---------- */
+
+const KEY_STORAGE = "krea2-api-key";
+export const getApiKey = () => localStorage.getItem(KEY_STORAGE) || "";
+
+export function setApiKey(k) {
+  try { localStorage.setItem(KEY_STORAGE, k.trim()); } catch { /* 存不进就算了 */ }
+}
+
+let keyDialogPromise = null;
+
+/* 密钥弹窗：保存 resolve 密钥、取消 resolve null；并发 401 共享同一次弹窗 */
+function askApiKey() {
+  if (keyDialogPromise) return keyDialogPromise;
+  keyDialogPromise = new Promise((resolve) => {
+    const dlg = $("apikey-dialog");
+    const input = $("apikey-input");
+    const err = $("apikey-error");
+    err.textContent = "";
+    input.value = getApiKey();
+    dlg.classList.remove("hidden");
+    input.focus();
+    const done = (value) => {
+      dlg.classList.add("hidden");
+      keyDialogPromise = null;
+      resolve(value);
+    };
+    const submit = () => {
+      const v = input.value.trim();
+      if (!v) { err.textContent = t("密钥不能为空"); return; }
+      setApiKey(v);
+      done(v);
+    };
+    $("apikey-save").addEventListener("click", submit, { once: true });
+    $("apikey-cancel").addEventListener("click", () => done(null), { once: true });
+    input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+  });
+  return keyDialogPromise;
+}
+
+/* /api 请求统一入口：自动附带 X-API-Key；401 时弹窗收集后自动重试一次。
+   非 /api 路径（页面、图片、语言包）不经过这里。 */
+export async function apiFetch(url, opts = {}) {
+  const headers = new Headers(opts.headers || {});
+  const key = getApiKey();
+  if (key) headers.set("X-API-Key", key);
+  const res = await fetch(url, { ...opts, headers });
+  if (res.status === 401 && url.startsWith("/api") && !opts._retried) {
+    const k = await askApiKey();
+    if (k !== null) return apiFetch(url, { ...opts, _retried: true });
+  }
+  return res;
+}

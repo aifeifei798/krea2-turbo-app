@@ -1,5 +1,5 @@
 /* 画廊：分页加载、卡片、删除；灯箱查看 */
-import { $, state, toast, fmtTime, escapeHTML, escapeAttr } from "./core.js";
+import { $, state, toast, fmtTime, escapeHTML, escapeAttr, apiFetch } from "./core.js";
 import { t } from "./i18n.js";
 
 const GALLERY_PAGE = 60; // 与后端 GALLERY_PAGE_DEFAULT 对应
@@ -56,7 +56,7 @@ function appendCards(images) {
 }
 
 export async function loadGallery() {
-  const data = await fetch(`/api/images?limit=${GALLERY_PAGE}`).then((r) => r.json());
+  const data = await apiFetch(`/api/images?limit=${GALLERY_PAGE}`).then((r) => r.json());
   state.images = data.items;
   state.galleryTotal = data.total;
   state.galleryHasMore = data.has_more;
@@ -81,7 +81,7 @@ async function loadMoreGallery() {
   $("gallery-more").classList.remove("hidden");
   try {
     const cursor = encodeURIComponent(`${last.created_at}:${last.id}`);
-    const data = await fetch(`/api/images?limit=${GALLERY_PAGE}&before=${cursor}`)
+    const data = await apiFetch(`/api/images?limit=${GALLERY_PAGE}&before=${cursor}`)
       .then((r) => r.json());
     const known = new Set(state.images.map((i) => i.id));
     const fresh = data.items.filter((i) => !known.has(i.id));
@@ -121,7 +121,7 @@ function bindCard(fig) {
 
 async function deleteImage(id) {
   try {
-    const res = await fetch(`/api/images/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`/api/images/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } catch (e) {
     toast(t("删除失败：{m}", { m: e.message }), true);

@@ -1,9 +1,9 @@
-"""模型/LoRA 目录：由 .env / 环境变量决定（server.sh 启动时加载 .env），无 UI 修改入口。
+"""模型/LoRA 目录与 API 密钥：由 .env / 环境变量决定（server.sh 启动时加载 .env），无 UI 修改入口。
 
 KREA_MODEL_DIR 必填（无默认值——避免把开发者的个人路径带进仓库）；
 未配置时 fail-fast 并给出可操作的指引。
 可配变量（见 .env.example）：KREA_MODEL_DIR（必填）/ KREA_LORA_DIR（可选）/
-KREA_MODEL_INT8_DIR / KREA_MODEL_INT4_DIR（预量化目录，可选）
+KREA_MODEL_INT8_DIR / KREA_MODEL_INT4_DIR（预量化目录，可选）/ KREA_API_KEY（必填）
 """
 
 import os
@@ -12,6 +12,19 @@ from pathlib import Path
 
 class ModelDirNotConfigured(RuntimeError):
     """KREA_MODEL_DIR 未配置。"""
+
+
+class ApiKeyNotConfigured(RuntimeError):
+    """KREA_API_KEY 未配置。"""
+
+
+def get_api_key() -> str:
+    k = os.environ.get("KREA_API_KEY", "").strip()
+    if not k:
+        raise ApiKeyNotConfigured(
+            "未配置 API 密钥：在 .env 设置 KREA_API_KEY"
+            "（可用 `openssl rand -hex 16` 生成）后重启")
+    return k
 
 
 def get_model_dir() -> Path:

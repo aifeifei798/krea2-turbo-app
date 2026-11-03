@@ -1,5 +1,5 @@
 /* LoRA：模型页卡片管理（加载/卸载/强度）+ 制作页入口摘要 */
-import { $, state, toast, escapeHTML, escapeAttr, friendlyApiError } from "./core.js";
+import { $, state, toast, escapeHTML, escapeAttr, friendlyApiError, apiFetch } from "./core.js";
 import { t } from "./i18n.js";
 import { savedSettings } from "./settings.js";
 
@@ -86,7 +86,7 @@ async function toggleLora(i) {
   lora.busy = true;
   applyLoraUI(i);
   try {
-    const res = await fetch("/api/loras/toggle", {
+    const res = await apiFetch("/api/loras/toggle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: lora.id, on: target }),

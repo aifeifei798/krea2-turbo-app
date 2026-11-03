@@ -4,6 +4,7 @@
 # 用法:
 #   ./server.sh start   [精度] [端口]   后台启动（默认精度 int8，默认端口 8420）
 #   ./server.sh stop                    停止服务
+#   ./server.sh key                     显示 API 访问密钥
 #   ./server.sh restart [精度] [端口]   重启（缺省沿用上次精度）
 #   ./server.sh status                  服务 / 模型 / LoRA / 显存状态
 #   ./server.sh log     [行数|-f]       查看日志（默认 50 行，-f 跟随输出）
@@ -33,7 +34,7 @@ err()  { echo "${C_R}✗${C_0} $*" >&2; }
 warn() { echo "${C_Y}⚠${C_0} $*" >&2; }
 hint() { echo "${C_DIM}  $*${C_0}"; }
 
-c_url()    { curl -s --max-time 2 "http://127.0.0.1:${PORT_DEFAULT}$1" 2>/dev/null || true; }
+c_url()    { curl -s --max-time 2 -H "X-API-Key: ${KREA_API_KEY:-}" "http://127.0.0.1:${PORT_DEFAULT}$1" 2>/dev/null || true; }
 meta_get() { [ -f "$META_FILE" ] && grep -m1 "^$1=" "$META_FILE" | cut -d= -f2 || true; }
 meta_set() { touch "$META_FILE"; grep -v "^$1=" "$META_FILE" > "$META_FILE.tmp" 2>/dev/null || true; mv "$META_FILE.tmp" "$META_FILE"; echo "$1=$2" >> "$META_FILE"; }
 
@@ -53,6 +54,21 @@ port_pid() {
 
 valid_precision() { case "$1" in bf16|int8|int4) return 0 ;; *) return 1 ;; esac; }
 
+# 预检：API 密钥必须存在（.env 的 KREA_API_KEY）——缺失时自动生成并写回 .env
+ensure_api_key() {
+  if [ -z "${KREA_API_KEY:-}" ]; then
+    local key
+    key=$(.venv/bin/python -c "import secrets; print(secrets.token_hex(16))")
+    {
+      [ -f .env ] && echo "" || echo "# Krea 2 Turbo 启动配置"
+      echo "# API 访问密钥（自动生成于 $(date '+%F %T')；UI 首次打开时输入一次即可）"
+      echo "KREA_API_KEY=$key"
+    } >> .env
+    export KREA_API_KEY="$key"
+    echo "${C_Y}▸ 已自动生成 KREA_API_KEY 并写入 .env：${C_0}${C_B}$key${C_0}"
+  fi
+}
+
 # 预检：模型目录必须已配置且为有效检查点（.env 提供，见 .env.example）
 check_model_dir() {
   if [ -z "${KREA_MODEL_DIR:-}" ]; then
@@ -69,7 +85,7 @@ check_model_dir() {
 wait_ready() {
   local max_s="${1:-180}" waited=0 state="" detail=""
   while [ "$waited" -lt "$max_s" ]; do
-    json=$(curl -s --max-time 2 http://127.0.0.1:${PORT_DEFAULT}/api/model 2>/dev/null || true)
+    json=$(curl -s --max-time 2 -H "X-API-Key: ${KREA_API_KEY:-}" http://127.0.0.1:${PORT_DEFAULT}/api/model 2>/dev/null || true)
     if [ -n "$json" ]; then
       read -r state detail < <(echo "$json" | python3 -c \
         "import json,sys;d=json.load(sys.stdin);print(d['state'], d['detail'])" 2>/dev/null || true)
@@ -117,6 +133,7 @@ do_start() {
 
   # .env（可选）：模型/LoRA 目录等启动配置，见 .env.example
   set -a; [ -f .env ] && . ./.env; set +a
+  ensure_api_key
   check_model_dir
 
   # 日志超 32MB 归档为 .old（只留一代），防止 tqdm/访问日志无限膨胀
@@ -160,6 +177,7 @@ do_stop() {
 
 do_status() {
   local pid port precision json portp
+  set -a; [ -f .env ] && . ./.env; set +a
   port=$(meta_get port); [ -z "$port" ] && port=$PORT_DEFAULT
   precision=$(meta_get precision); [ -z "$precision" ] && precision="—"
   pid=$(pid_file_pid)
@@ -215,6 +233,7 @@ do_run() {
     exit 1
   fi
   set -a; [ -f .env ] && . ./.env; set +a
+  ensure_api_key
   check_model_dir
   export KREA_PRECISION="$precision"
   meta_set precision "$precision"; meta_set port "$port"
@@ -234,6 +253,9 @@ do_help() {
 
 CMD="${1:-}"
 case "$CMD" in
+  key)     set -a; [ -f .env ] && . ./.env; set +a
+           if [ -n "${KREA_API_KEY:-}" ]; then echo "$KREA_API_KEY"; else
+             err "未配置 KREA_API_KEY —— 启动时会自动生成，或手动加进 .env"; exit 1; fi ;;
   start)   shift; do_start "$@" ;;
   stop)    shift; do_stop "$@" ;;
   restart)
@@ -247,6 +269,6 @@ case "$CMD" in
   help|-h|--help) do_help ;;
   bf16|int8|int4) do_run "$@" ;;
   "")      do_help ;;
-  *)       err "未知命令 \"$CMD\" —— 可用：start | stop | restart | status | log | run | help"
+  *)       err "未知命令 \"$CMD\" —— 可用：start | stop | restart | status | log | run | key | help"
            do_help >&2; exit 1 ;;
 esac
