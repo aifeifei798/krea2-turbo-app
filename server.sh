@@ -5,6 +5,7 @@
 #   ./server.sh start   [精度] [端口]   后台启动（默认精度 int8，默认端口 8420）
 #   ./server.sh stop                    停止服务
 #   ./server.sh key                     显示 API 访问密钥
+#   ./server.sh lan     [精度] [端口]   局域网模式（0.0.0.0，手机等设备可访问）
 #   ./server.sh restart [精度] [端口]   重启（缺省沿用上次精度）
 #   ./server.sh status                  服务 / 模型 / LoRA / 显存状态
 #   ./server.sh log     [行数|-f]       查看日志（默认 50 行，-f 跟随输出）
@@ -108,7 +109,7 @@ wait_ready() {
 # ---------------------------------------------------------------- 动作
 
 do_start() {
-  local precision="${1:-}" port="${2:-}" pid portp
+  local precision="${1:-}" port="${2:-}" host="${3:-127.0.0.1}" pid portp
   [ -z "$precision" ] && precision=$(meta_get precision); [ -z "$precision" ] && precision=int8
   [ -z "$port" ] && port=$(meta_get port); [ -z "$port" ] && port=$PORT_DEFAULT
   valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | int8 | int4）"; exit 1; }
@@ -142,11 +143,15 @@ do_start() {
   fi
 
   export KREA_PRECISION="$precision"
-  nohup .venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port "$port" >> "$LOG_FILE" 2>&1 &
+  nohup .venv/bin/python -m uvicorn server.main:app --host "$host" --port "$port" >> "$LOG_FILE" 2>&1 &
   pid=$!
   echo "$pid" > "$PID_FILE"
   meta_set precision "$precision"; meta_set port "$port"
-  ok "服务已启动  ${C_DIM}PID $pid · 端口 $port · 精度 $precision · 日志 $LOG_FILE${C_0}"
+  local host_note=""
+  if [ "$host" = "0.0.0.0" ]; then
+    host_note=" · 局域网 $(hostname -I 2>/dev/null | awk '{print $1}')" || host_note=" · 局域网"
+  fi
+  ok "服务已启动  ${C_DIM}PID $pid · 端口 $port · 精度 $precision · 日志 $LOG_FILE${C_0}${host_note}"
   sleep 2
   pid_alive "$pid" || { err "进程启动后立即退出 —— 查看原因：./server.sh log 30"; tail -5 "$LOG_FILE" >&2 || true; exit 1; }
   ok "端口就绪，模型加载中（首次约 1–2 分钟）"
@@ -253,6 +258,12 @@ do_help() {
 
 CMD="${1:-}"
 case "$CMD" in
+  lan)     shift
+           do_stop 2>/dev/null || true
+           set -a; [ -f .env ] && . ./.env; set +a
+           ensure_api_key
+           echo "${C_Y}▸ 局域网模式：监听 0.0.0.0，API 已有密钥保护；新设备首次打开 UI 输入密钥即可${C_0}"
+           do_start "${1:-}" "${2:-}" "0.0.0.0" ;;
   key)     set -a; [ -f .env ] && . ./.env; set +a
            if [ -n "${KREA_API_KEY:-}" ]; then echo "$KREA_API_KEY"; else
              err "未配置 KREA_API_KEY —— 启动时会自动生成，或手动加进 .env"; exit 1; fi ;;
@@ -269,6 +280,6 @@ case "$CMD" in
   help|-h|--help) do_help ;;
   bf16|int8|int4) do_run "$@" ;;
   "")      do_help ;;
-  *)       err "未知命令 \"$CMD\" —— 可用：start | stop | restart | status | log | run | key | help"
+  *)       err "未知命令 \"$CMD\" —— 可用：start | stop | restart | status | log | run | key | lan | help"
            do_help >&2; exit 1 ;;
 esac

@@ -29,8 +29,9 @@ export function getInpaintPayload() {
   };
 }
 
-/* 载入要修的图片（Blob）：压缩到 MAX_EDGE、清空笔迹、展示编辑器 */
-export function loadInpaintFile(blob) {
+/* 载入要修的图片（Blob）：压缩到 MAX_EDGE、清空笔迹、展示编辑器。
+   sourceId：从画廊/灯箱带入的源图 id（手动上传则为 null），供修图结果前后对比 */
+export function loadInpaintFile(blob, sourceId = null) {
   const url = URL.createObjectURL(blob);
   const img = new Image();
   img.onload = () => {
@@ -49,6 +50,7 @@ export function loadInpaintFile(blob) {
     const dataUrl = canvas.toDataURL("image/png");
     baseB64 = dataUrl.split(",")[1];
     strokes = [];
+    state.inpaintSourceId = sourceId;
     $("inpaint-thumb").src = dataUrl;
     $("inpaint-thumb").classList.remove("hidden");
     $("inpaint-plus").classList.add("hidden");
@@ -70,6 +72,7 @@ export function clearInpaintImage() {
   baseB64 = null;
   strokes = [];
   cur = null;
+  state.inpaintSourceId = null;
   $("inpaint-thumb").src = "";
   $("inpaint-thumb").classList.add("hidden");
   $("inpaint-plus").classList.remove("hidden");

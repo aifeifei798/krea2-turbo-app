@@ -5,6 +5,7 @@
 
 import hmac
 import json
+import re
 import logging
 import threading
 from contextlib import asynccontextmanager
@@ -81,6 +82,7 @@ class GenerateIn(BaseModel):
     init_image: str | None = Field(default=None, max_length=8_000_000)  # base64 参考图（重绘）
     mask_image: str | None = Field(default=None, max_length=8_000_000)  # base64 蒙版（白=重绘）
     strength: float = Field(default=0.6, ge=0.05, le=0.95)  # 重绘幅度
+    source_id: str | None = Field(default=None, max_length=64)  # 局部重绘源图 id（前后对比用）
     loras: list[LoraIn] = Field(default_factory=list, max_length=8)
 
 
@@ -187,12 +189,15 @@ def generate(body: GenerateIn):
             pipeline._decode_image_b64(body.mask_image)
         except Exception:  # noqa: BLE001 - 解码失败统一回 400
             raise HTTPException(400, "蒙版不是有效的图片数据") from None
+    source_id = body.source_id
+    if source_id is not None and not re.fullmatch(r"[\w-]{1,64}", source_id):
+        source_id = None  # 只作元数据展示与 /outputs 拼接，收紧字符集
     task_id = pipeline.enqueue(
         prompt=body.prompt, aspect_id=body.aspect,
         steps=body.steps, seed=body.seed, batch=body.batch, rounds=body.rounds,
         styles=styles, role=body.role, common=body.common.strip(),
         init_image=body.init_image, mask_image=body.mask_image,
-        strength=body.strength,
+        strength=body.strength, source_id=source_id,
         loras=[(l.id, l.weight) for l in body.loras])
     return {"task_id": task_id}
 

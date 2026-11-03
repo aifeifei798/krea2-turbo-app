@@ -41,6 +41,7 @@ class GenRequest:
     mask_image: str | None = None  # base64 蒙版（白=重绘）：有值 = 局部重绘
     strength: float = 0.6  # 重绘幅度 0-1：越大越偏离原图（局部重绘只作用于涂抹区）
     loras: list[tuple[str, float]] = field(default_factory=list)  # (lora_id, weight)
+    source_id: str | None = None  # 局部重绘的源图 id（灯箱送修图时带上，供前后对比）
     created_at: float = field(default_factory=time.time)
 
 

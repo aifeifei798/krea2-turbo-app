@@ -21,6 +21,7 @@ export const state = {
   initImage: null, // 参考图 base64（不含 data: 前缀）
   initThumb: null, // 参考图缩略 dataURL
   inpaintDims: null, // 修图原图尺寸 {width, height}（数据块显示用）
+  inpaintSourceId: null, // 灯箱送修图的源图 id（供修图结果前后对比）
   loras: [], // {id, name, filename, size_mb, on(=已加载), weight}
   selectedPrecision: "bf16",
   precisionHints: {},

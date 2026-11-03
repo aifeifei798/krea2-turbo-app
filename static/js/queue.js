@@ -18,6 +18,19 @@ function updateQueueBadge() {
   const n = Object.keys(state.activeTasks).length;
   $("queue-count").textContent = String(n);
   $("queue-count").classList.toggle("hidden", n === 0);
+  // 进度条左侧的队列数字与右上角徽标同源
+  const chip = $("cp-queue");
+  chip.textContent = t("队列 {n}", { n });
+  chip.classList.toggle("hidden", n === 0);
+}
+
+/* 生成按钮点击反馈：短暂加深底色（350ms），比 :active 更可感知 */
+let flashTimer = null;
+function flashGenerateBtn() {
+  const btn = $("generate-btn");
+  btn.classList.add("btn-flash");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => btn.classList.remove("btn-flash"), 350);
 }
 
 function renderQueueRow(taskId) {
@@ -196,6 +209,7 @@ function showTaskImages(task) {
 const SEED_MAX = 9007199254740991; // Number.MAX_SAFE_INTEGER，torch 上限之内
 
 export async function generate() {
+  flashGenerateBtn(); // 点击即反馈，校验失败也不至于"按了没反应"
   const prompt = $("prompt").value.trim();
   const isInpaint = state.mode === "inpaint";
   // 通用词会拼在提示词最前，填写了通用词即视为有内容；修图（有蒙版）提示词可留空
@@ -234,6 +248,7 @@ export async function generate() {
           init_image: inpaint.init_image,
           mask_image: inpaint.mask_image,
           strength: Number($("inpaint-strength").value),
+          ...(state.inpaintSourceId ? { source_id: state.inpaintSourceId } : {}),
         }
       : state.mode === "i2i" && state.initImage
         ? { init_image: state.initImage, strength: Number($("strength").value) }
@@ -283,7 +298,8 @@ async function rerunLast() {
     rounds: last.rounds || 1,
     ...(inpaint
       ? { init_image: inpaint.init_image, mask_image: inpaint.mask_image,
-          strength: last.strength ?? 0.75 }
+          strength: last.strength ?? 0.75,
+          ...(state.inpaintSourceId ? { source_id: state.inpaintSourceId } : {}) }
       : last.img2img && state.initImage
         ? { init_image: state.initImage, strength: last.strength ?? 0.6 }
         : {}),

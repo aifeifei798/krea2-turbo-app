@@ -213,7 +213,7 @@ export function reuseAsInpaint(img) {
   saveSettings();
   fetch(img.url)
     .then((r) => r.blob())
-    .then(loadInpaintFile)
+    .then((b) => loadInpaintFile(b, img.id)) // 记住源图 id，修图结果可前后对比
     .catch(() => toast(t("参考图读取失败"), true));
   toast(t("已带入修图，用画笔涂抹要重绘的部位"));
   $("prompt").focus();

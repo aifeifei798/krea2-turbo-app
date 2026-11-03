@@ -103,3 +103,8 @@ select {
 .summary-btn.is-on {
   @apply border-accent bg-accent-dim text-accent;
 }
+
+/* 生成按钮点击反馈：短暂加深底色（accent → accent-deep），队列化提交也要有"按到了"的手感 */
+#generate-btn { transition: background-color .15s var(--ease-forge), transform .1s var(--ease-forge); }
+#generate-btn.btn-flash { background-color: var(--color-accent-deep); }
+

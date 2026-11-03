@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: i18n 键完整性
+        run: node scripts/check_i18n.mjs
+
+      - name: 前端模块导入健康
+        run: node scripts/check_imports.mjs
+
+      - name: Python 语法
+        run: python -m py_compile server/*.py scripts/gen.py scripts/mcp_server.py
+
+      - name: JS 语法
+        run: |
+          for f in static/js/*.js; do node --check "$f"; done

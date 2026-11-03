@@ -179,6 +179,7 @@ def _new_task(req: state.GenRequest) -> dict:
             "rounds": req.rounds,
             "img2img": is_i2i,
             "inpaint": is_inpaint,
+            "source_id": req.source_id if is_inpaint else None,
             "strength": req.strength if is_i2i else None,
             "loras": [
                 {"id": lid, "name": all_loras[lid]["name"], "weight": weight}
@@ -188,12 +189,33 @@ def _new_task(req: state.GenRequest) -> dict:
     }
 
 
+def _bake_exif_params(image, jpg_path: Path, meta: dict) -> None:
+    """把完整提示词与关键参数写进 JPG EXIF UserComment（A1111 兼容格式），
+    分享出去的图在别的工具里也能读到全套参数。"""
+    from PIL import Image
+
+    full = meta.get("full_prompt") or meta.get("prompt") or ""
+    styles = " · ".join(s["name"] for s in meta.get("styles", []))
+    params = (f"{full}\n"
+              f"Steps: {meta['steps']}, Seed: {meta['seed']}, "
+              f"Size: {meta['width']}x{meta['height']}, Model: Krea 2 Turbo"
+              + (f", Styles: {styles}" if styles else "")
+              + (", Inpaint" if meta.get("inpaint") else ""))
+    # UserComment 约定：8 字节字符码 "UNICODE\0" + UTF-16-BE 正文
+    exif = Image.Exif()
+    exif[0x9286] = b"UNICODE\x00" + params.encode("utf-16-be")
+    try:
+        image.save(jpg_path, quality=95, exif=exif.tobytes())
+    except Exception as exc:  # noqa: BLE001 - EXIF 失败不该影响出图
+        logger.warning("exif bake failed: %s", exc)
+        image.save(jpg_path, quality=95)
+
+
 def _save_image(image, task: dict, seed: int, index: int) -> dict:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S")
     stem = f"{ts}_{seed}_{index}" if task["request"]["batch"] > 1 else f"{ts}_{seed}"
     jpg_path = OUTPUT_DIR / f"{stem}.jpg"
-    image.save(jpg_path, quality=95)
 
     meta = {
         "id": stem,
@@ -212,10 +234,13 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
         **({"strength": task["request"]["strength"]}
            if task["request"]["img2img"] else {}),
         **({"inpaint": True} if task["request"]["inpaint"] else {}),
+        **({"source_id": task["request"]["source_id"]}
+           if task["request"].get("source_id") else {}),
         "loras": task["request"]["loras"],
         "created_at": int(time.time()),
         "model": "Krea 2 Turbo",
     }
+    _bake_exif_params(image, jpg_path, meta)
     (OUTPUT_DIR / f"{stem}.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -223,6 +248,8 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
             "height", "steps", "seed", "batch", "rounds", "loras", "created_at")
     if task["request"]["img2img"]:
         keys += ("strength",)
+    if task["request"].get("source_id"):
+        keys += ("source_id",)
     return {"id": stem, "url": f"/outputs/{stem}.jpg", **{k: meta[k] for k in keys}}
 
 
@@ -376,7 +403,7 @@ def enqueue(prompt: str, aspect_id: str, steps: int,
             styles: list[str] | None = None, role: str | None = None,
             common: str = "",
             init_image: str | None = None, mask_image: str | None = None,
-            strength: float = 0.6,
+            strength: float = 0.6, source_id: str | None = None,
             loras: list[tuple[str, float]] | None = None) -> str:
     req = state.GenRequest(
         task_id=uuid.uuid4().hex[:12],
@@ -392,6 +419,7 @@ def enqueue(prompt: str, aspect_id: str, steps: int,
         init_image=init_image,
         mask_image=mask_image,
         strength=strength,
+        source_id=source_id,
         loras=loras or [],
     )
     with state.lock:

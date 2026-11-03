@@ -8,11 +8,41 @@ let lightboxId = null;
 let deleteArmed = false;
 let deleteTimer = null;
 
+/* 修图前后对比：compareOn 时原图覆盖层按拖动条位置裁剪（左=原图，右=修后） */
+let compareOn = false;
+let compareSrc = null;
+
+function setComparePos(pct) {
+  pct = Math.max(0, Math.min(100, pct));
+  $("lb-compare-img").style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+  $("lb-compare-bar").style.left = `${pct}%`;
+}
+
+function setCompare(on) {
+  compareOn = on;
+  $("lb-compare-img").src = compareSrc || "";
+  $("lb-compare-img").classList.toggle("hidden", !on);
+  $("lb-compare-bar").classList.toggle("hidden", !on);
+  $("lb-compare-btn").classList.toggle("text-accent", on);
+  if (on) setComparePos(50);
+}
+
 function openLightbox(id) {
   const img = state.images.find((i) => i.id === id);
   if (!img) return;
   lightboxId = id;
   disarmDelete();
+  // 修图结果带 source_id 时预载原图，能读到才给「对比」按钮
+  setCompare(false);
+  $("lb-compare-btn").classList.add("hidden");
+  compareSrc = null;
+  if (img.source_id) {
+    const src = `/outputs/${img.source_id}.jpg`;
+    const probe = new Image();
+    probe.onload = () => { if (lightboxId === id) { compareSrc = src; $("lb-compare-btn").classList.remove("hidden"); } };
+    probe.onerror = () => { if (lightboxId === id) $("lb-compare-btn").classList.add("hidden"); };
+    probe.src = src;
+  }
   $("lb-img").src = img.url;
   $("lb-img").alt = img.prompt || t("生成的图片");
   $("lb-prompt").textContent = img.prompt || t("（提示词缺失）");
@@ -121,6 +151,26 @@ export function bindLightbox() {
     }
     if (lightboxId) deleteImage(lightboxId);
   });
+  // 修图前后对比：拖动条（pointer 捕获，0-100%）
+  const bar = $("lb-compare-bar");
+  bar.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    try { bar.setPointerCapture(e.pointerId); } catch { /* 指针已失效则不捕获 */ }
+    const move = (ev) => {
+      const rect = $("lb-imgzone").getBoundingClientRect();
+      setComparePos(((ev.clientX - rect.left) / rect.width) * 100);
+    };
+    move(e);
+    const up = () => {
+      bar.removeEventListener("pointermove", move);
+      bar.removeEventListener("pointerup", up);
+      bar.removeEventListener("pointercancel", up);
+    };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", up);
+    bar.addEventListener("pointercancel", up);
+  });
+  $("lb-compare-btn").addEventListener("click", () => setCompare(!compareOn));
   // 灯箱直接送修图：生成 → 挑毛病 → 就地涂抹重绘
   $("lb-inpaint").addEventListener("click", () => {
     const img = state.images.find((i) => i.id === lightboxId);
