@@ -210,6 +210,24 @@ export function bindLightbox() {
   });
   document.querySelectorAll("[data-lb-prev]").forEach((b) => b.addEventListener("click", () => lightboxNav(-1)));
   document.querySelectorAll("[data-lb-next]").forEach((b) => b.addEventListener("click", () => lightboxNav(1)));
+  /* 图片上滚轮翻页：滚上=上一张、滚下=下一张。累积阈值+冷却防触控板惯性连翻；
+     只挂在图片区（详情面板自留滚动），preventDefault 防止滚透到底下页面 */
+  let wheelAcc = 0;
+  let wheelLock = 0;
+  let wheelIdleTimer = 0;
+  $("lb-imgzone").addEventListener("wheel", (e) => {
+    e.preventDefault();
+    clearTimeout(wheelIdleTimer);
+    wheelIdleTimer = setTimeout(() => (wheelAcc = 0), 400);
+    const now = Date.now();
+    if (now < wheelLock) return;
+    wheelAcc += e.deltaY;
+    if (Math.abs(wheelAcc) >= 60) {
+      lightboxNav(wheelAcc < 0 ? -1 : 1);
+      wheelAcc = 0;
+      wheelLock = now + 300;
+    }
+  }, { passive: false });
   $("lb-copy").addEventListener("click", async () => {
     const img = state.images.find((i) => i.id === lightboxId);
     if (!img?.prompt) { toast("这张图没有提示词可复制", true); return; }

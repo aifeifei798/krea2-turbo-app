@@ -376,7 +376,7 @@
   <div id="lightbox" class="fixed inset-0 z-50 bg-paper/90 hidden" role="dialog" aria-modal="true" aria-label="图片详情">
     <div class="absolute inset-0" data-close></div>
     <div class="relative h-full flex flex-col lg:flex-row items-center justify-center gap-6 p-4 lg:p-10 pointer-events-none">
-      <div class="relative pointer-events-auto w-fit max-w-full flex items-center justify-center">
+      <div id="lb-imgzone" class="relative pointer-events-auto w-fit max-w-full flex items-center justify-center">
         <img id="lb-img" src="" alt="" class="max-h-[70vh] lg:max-h-[85vh] max-w-full object-contain rounded-md border border-border">
         <button id="lb-prev" type="button" aria-label="上一张" data-lb-prev
           class="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-panel/85 text-muted text-lg leading-none hover:text-accent hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">‹</button>
