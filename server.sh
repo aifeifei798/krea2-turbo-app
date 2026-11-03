@@ -79,6 +79,9 @@ do_start() {
 
   if [ ! -x .venv/bin/python ]; then echo "未找到 .venv，请先按 README 创建 Python 环境" >&2; exit 1; fi
 
+  # .env（可选）：模型/LoRA 目录等启动配置，见 .env.example
+  set -a; [ -f .env ] && . ./.env; set +a
+
   # 日志超 32MB 归档为 .old（只留一代），防止 tqdm/访问日志无限膨胀
   if [ -f "$LOG_FILE" ] && [ "$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)" -gt $((32*1024*1024)) ]; then
     mv "$LOG_FILE" "$LOG_FILE.old"
@@ -154,6 +157,7 @@ do_run() {
   local precision="${1:-int8}" port="${2:-$PORT_DEFAULT}" pid
   valid_precision "$precision" || { echo "未知精度: $precision（可选 $PRECISIONS）" >&2; exit 1; }
   [ ! -x .venv/bin/python ] && { echo "未找到 .venv，请先按 README 创建 Python 环境" >&2; exit 1; }
+  set -a; [ -f .env ] && . ./.env; set +a
   export KREA_PRECISION="$precision"
   meta_set precision "$precision"; meta_set port "$port"
   echo "▸ 前台运行 · 精度 $precision · 端口 $port（Ctrl+C 停止）"

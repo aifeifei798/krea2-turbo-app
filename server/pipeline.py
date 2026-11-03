@@ -21,32 +21,21 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from . import paths
 from .presets import DEFAULT_STEPS, get_aspect, get_role, get_style, record_usage
 
 logger = logging.getLogger("krea.pipeline")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-MODEL_PATH = Path("/home/feifei/develop/models/Krea-2-Turbo")
-LORA_DIR = MODEL_PATH / "loras"
 OUTPUT_DIR = BASE_DIR / "outputs"
 
 _PRECISIONS = ("bf16", "int8", "int4")
 
-# 预量化模型目录（scripts/export_quantized.py 生成）：存在则直读量化权重，
-# 省一半/四分之三读盘并免现场量化；缺失则回退从主目录现场量化（行为不变）
-QUANT_MODEL_DIRS = {
-    "int8": MODEL_PATH.parent / f"{MODEL_PATH.name}-int8",
-    "int4": MODEL_PATH.parent / f"{MODEL_PATH.name}-int4",
-}
-
 
 def _quant_source(precision: str) -> Path:
-    """该精度应读取的 transformer/text_encoder 所在目录。"""
-    d = QUANT_MODEL_DIRS.get(precision)
-    if d and (d / "transformer" / "config.json").exists() \
-            and (d / "text_encoder" / "config.json").exists():
-        return d
-    return MODEL_PATH
+    """该精度实际读取的目录：预量化目录（显式指定 > 同级约定）> 模型目录（现场量化）。"""
+    return paths.get_quant_dir(precision) or paths.get_model_dir()
+
 # 启动精度可用环境变量指定：KREA_PRECISION=bf16|int8|int4（server.sh 传入），默认 int8
 DEFAULT_PRECISION = os.environ.get("KREA_PRECISION", "int8").strip().lower()
 if DEFAULT_PRECISION not in _PRECISIONS:
@@ -103,12 +92,13 @@ def _set_state(state: str, detail: str, **extra) -> None:
 def _build_pipe(precision: str):
     """按精度构建管线。量化精度（int8/int4）下 transformer 与文本编码器都量化；
     diffusers 的 pipeline.to 会跳过带量化配置的组件，所以量化路径分组件加载、
-    逐个显式上 GPU。"""
+    逐个显式上 GPU。模型目录取自 paths 配置（模型页可切换）。"""
     from diffusers import (BitsAndBytesConfig, Krea2Pipeline,
                            Krea2Transformer2DModel)
 
+    md = paths.get_model_dir()
     if precision == "bf16":
-        pipe = Krea2Pipeline.from_pretrained(MODEL_PATH, torch_dtype=torch.bfloat16)
+        pipe = Krea2Pipeline.from_pretrained(md, torch_dtype=torch.bfloat16)
         # 32GB 显存对 bf16 全量偏紧，offload 让子模型按需进出
         pipe.enable_model_cpu_offload()
         return pipe
@@ -133,7 +123,7 @@ def _build_pipe(precision: str):
 
     # 预量化目录存在时直读（量化配置已嵌在组件 config.json 里，勿重复传）
     src = _quant_source(precision)
-    prequant = src is not MODEL_PATH
+    prequant = src != md
     from transformers import Qwen3VLModel
     if prequant:
         logger.info("precision %s: 读取预量化权重 %s", precision, src)
@@ -143,13 +133,13 @@ def _build_pipe(precision: str):
             src, subfolder="text_encoder", torch_dtype=torch.bfloat16)
     else:
         transformer = Krea2Transformer2DModel.from_pretrained(
-            MODEL_PATH, subfolder="transformer", torch_dtype=torch.bfloat16,
+            md, subfolder="transformer", torch_dtype=torch.bfloat16,
             quantization_config=t_cfg)
         text_encoder = Qwen3VLModel.from_pretrained(
-            MODEL_PATH, subfolder="text_encoder", torch_dtype=torch.bfloat16,
+            md, subfolder="text_encoder", torch_dtype=torch.bfloat16,
             quantization_config=e_cfg)
     pipe = Krea2Pipeline.from_pretrained(
-        MODEL_PATH, transformer=transformer, text_encoder=text_encoder,
+        md, transformer=transformer, text_encoder=text_encoder,
         torch_dtype=torch.bfloat16)
     transformer.to("cuda")
     text_encoder.to("cuda")
@@ -236,11 +226,12 @@ def _lora_display_name(path: Path) -> str:
 
 
 def list_loras() -> list[dict]:
-    """扫描 loras 目录，返回 [{id, name, filename, size_mb, loaded}]。"""
-    if not LORA_DIR.exists():
+    """扫描 LoRA 目录（paths 配置），返回 [{id, name, filename, size_mb, loaded}]。"""
+    lora_dir = paths.get_lora_dir()
+    if not lora_dir.exists():
         return []
     out = []
-    for p in sorted(LORA_DIR.glob("*.safetensors")):
+    for p in sorted(lora_dir.glob("*.safetensors")):
         lid = hashlib.sha1(p.name.encode()).hexdigest()[:8]
         _lora_files[lid] = p
         out.append({

@@ -14,6 +14,7 @@
 - **图生图重绘（SDEdit）**：「模式 → 图生图」上传参考图 + 重绘幅度 0.05–0.95——参考图按比例中心裁剪后 VAE 编码，按幅度截断 sigma 表加噪去噪（与 QwenImage 官方管线同一套 `latents_mean/std` 编码约定）；构图保留、提示词改风格/细节，批量/次数/LoRA/种子全部通用
 - **LoRA 混合**：模型加载完成后 `loras/` 目录的 LoRA **默认全部加载并常驻显存**（不随生成自动卸载），默认强度 0.4；「模型」页开关可单独卸载/重载，强度 0–2 独立调节、拖动即时生效
   - 自动兼容两种格式：diffusers PEFT 格式直载；ComfyUI/kohya 格式（`diffusion_model.` 前缀）自动把 `alpha` 标量按 `alpha/rank` 预乘进 `lora_B` 后加载
+- **模型/LoRA 目录配置**：写进 `.env`（参考 `.env.example`，server.sh 启动自动加载）——`KREA_MODEL_DIR` 基础模型目录、`KREA_LORA_DIR` LoRA 目录（缺省 `<模型目录>/loras`）、`KREA_MODELS_ROOT` 根目录；改完重启生效。LoRA 名称即目录内文件名
 - **模型精度可选**（「模型」页，RTX 5090 32GB 实测，量化作用于 transformer 与文本编码器）：
   | 精度 | 显存（常驻/峰值） | 512²/8 步 | 说明 |
   |---|---|---|---|
@@ -22,7 +23,7 @@
   | int4（bnb nf4） | ~9.9 / 11.4 GiB | ~2.4s | 最省显存，画质略降 |
   精度切换需重载模型（约半分钟）。|
 
-  **预量化加速**：`python scripts/export_quantized.py all` 一次性把 int8/int4 权重导出为 `models/Krea-2-Turbo-{int8,int4}/`（transformer 25G→12.0G/6.7G、encoder 8.3G→4.5G/2.9G），启动直读量化权重、免现场量化；同机清页缓存实测冷启动 **32s vs 现场量化 104s（约 3 倍）**。目录缺失时自动回退现场量化，删除不影响使用。
+  **预量化加速**：`python scripts/export_quantized.py all` 一次性把 int8/int4 权重导出为 `models/Krea-2-Turbo-{int8,int4}/`（transformer 25G→12.0G/6.7G、encoder 8.3G→4.5G/2.9G），启动直读量化权重、免现场量化；同机清页缓存实测冷启动 **32s vs 现场量化 104s（约 3 倍）**。解析顺序：`.env` 显式指定（`KREA_MODEL_INT8_DIR`/`KREA_MODEL_INT4_DIR`）→ 同级 `-int8/-int4` 约定 → 现场量化；目录缺失时自动回退现场量化，删除不影响使用。
 - **风格预设**：写实摄影 / 电影感 / 动漫 / 水墨 / 像素 / 低多边形 / 黑白 / 印象派 / 扁平海报
 - **比例预设**：1:1、3:2、2:3、16:9、9:16（均为 16 像素倍数对齐）
 - **步数 4–16、批量 1–4（每轮张数）、次数 1–8（跑几轮）、seed 固定复现**

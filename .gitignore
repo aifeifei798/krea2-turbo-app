@@ -9,3 +9,4 @@ __pycache__/
 .server.meta
 .server.log
 .usage.json
+.env

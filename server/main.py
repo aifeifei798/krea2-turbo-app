@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import pipeline
+from . import paths, pipeline
 
 # pipeline 的 INFO（模型加载/LoRA 装载/状态迁移）落到 .server.log，便于排查卡顿
 logging.basicConfig(level=logging.INFO)
@@ -82,6 +82,7 @@ def status():
 @app.get("/api/model")
 def model_state():
     return {**pipeline.get_model_state(),
+            "model_dir": str(paths.get_model_dir()),
             "precision_hints": pipeline.get_precision_hints()}
 
 

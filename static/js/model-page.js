@@ -65,6 +65,9 @@ export async function waitReady() {
 export function syncModelState(st) {
   state.modelReady = st.state === "ready";
   state.modelState = st.state;
+  if (st.model_dir) {
+    $("model-name").textContent = st.model_dir.split("/").pop() || "Krea 2 Turbo";
+  }
   const dot = $("model-state-dot");
   const ready = st.state === "ready";
   const failed = st.state === "error";
