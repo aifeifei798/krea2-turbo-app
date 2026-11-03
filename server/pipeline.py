@@ -31,6 +31,22 @@ LORA_DIR = MODEL_PATH / "loras"
 OUTPUT_DIR = BASE_DIR / "outputs"
 
 _PRECISIONS = ("bf16", "int8", "int4")
+
+# 预量化模型目录（scripts/export_quantized.py 生成）：存在则直读量化权重，
+# 省一半/四分之三读盘并免现场量化；缺失则回退从主目录现场量化（行为不变）
+QUANT_MODEL_DIRS = {
+    "int8": MODEL_PATH.parent / f"{MODEL_PATH.name}-int8",
+    "int4": MODEL_PATH.parent / f"{MODEL_PATH.name}-int4",
+}
+
+
+def _quant_source(precision: str) -> Path:
+    """该精度应读取的 transformer/text_encoder 所在目录。"""
+    d = QUANT_MODEL_DIRS.get(precision)
+    if d and (d / "transformer" / "config.json").exists() \
+            and (d / "text_encoder" / "config.json").exists():
+        return d
+    return MODEL_PATH
 # 启动精度可用环境变量指定：KREA_PRECISION=bf16|int8|int4（server.sh 传入），默认 int8
 DEFAULT_PRECISION = os.environ.get("KREA_PRECISION", "int8").strip().lower()
 if DEFAULT_PRECISION not in _PRECISIONS:
@@ -113,13 +129,23 @@ def _build_pipe(precision: str):
     else:
         raise ValueError(f"未知精度: {precision}")
 
+    # 预量化目录存在时直读（量化配置已嵌在组件 config.json 里，勿重复传）
+    src = _quant_source(precision)
+    prequant = src is not MODEL_PATH
     from transformers import Qwen3VLModel
-    transformer = Krea2Transformer2DModel.from_pretrained(
-        MODEL_PATH, subfolder="transformer", torch_dtype=torch.bfloat16,
-        quantization_config=t_cfg)
-    text_encoder = Qwen3VLModel.from_pretrained(
-        MODEL_PATH, subfolder="text_encoder", torch_dtype=torch.bfloat16,
-        quantization_config=e_cfg)
+    if prequant:
+        logger.info("precision %s: 读取预量化权重 %s", precision, src)
+        transformer = Krea2Transformer2DModel.from_pretrained(
+            src, subfolder="transformer", torch_dtype=torch.bfloat16)
+        text_encoder = Qwen3VLModel.from_pretrained(
+            src, subfolder="text_encoder", torch_dtype=torch.bfloat16)
+    else:
+        transformer = Krea2Transformer2DModel.from_pretrained(
+            MODEL_PATH, subfolder="transformer", torch_dtype=torch.bfloat16,
+            quantization_config=t_cfg)
+        text_encoder = Qwen3VLModel.from_pretrained(
+            MODEL_PATH, subfolder="text_encoder", torch_dtype=torch.bfloat16,
+            quantization_config=e_cfg)
     pipe = Krea2Pipeline.from_pretrained(
         MODEL_PATH, transformer=transformer, text_encoder=text_encoder,
         torch_dtype=torch.bfloat16)
