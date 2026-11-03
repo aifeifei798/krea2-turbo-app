@@ -125,6 +125,7 @@
             <button type="button" data-inpaint-tool="eraser" aria-label="橡皮工具" data-i18n="橡皮" data-i18n-aria="橡皮工具" class="px-2 shrink-0">橡皮</button>
             <button type="button" id="inpaint-undo" aria-label="撤销上一笔" data-i18n="撤销" data-i18n-aria="撤销上一笔" class="px-2 shrink-0">撤销</button>
             <button type="button" id="inpaint-clear" aria-label="清空全部涂抹" data-i18n="清空" data-i18n-aria="清空全部涂抹" class="px-2 shrink-0">清空</button>
+            <button type="button" id="inpaint-fine" aria-label="打开精细选区（放大涂抹）" data-i18n="精细" data-i18n-aria="打开精细选区（放大涂抹）" class="px-2 shrink-0">精细</button>
           </div>
         </div>
         <div class="mt-3">
@@ -441,6 +442,8 @@
             class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm bg-accent text-paper text-sm font-bold hover:opacity-90 transition-opacity" data-i18n="下载">下载</a>
           <button id="lb-copy" type="button"
             class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm hover:border-accent transition-colors" data-i18n="复制提示词">复制提示词</button>
+          <button id="lb-inpaint" type="button"
+            class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm hover:border-accent transition-colors" data-i18n="修图">修图</button>
           <button id="lb-delete" type="button"
             class="flex-1 text-center whitespace-nowrap px-3 py-2 rounded-sm border border-border text-sm text-muted hover:text-ink hover:border-accent transition-colors" data-i18n="删除">删除</button>
         </div>
@@ -473,6 +476,34 @@
         <button id="apikey-save" type="button"
           class="px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="保存">保存</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 精细选区弹窗（放大涂抹，笔迹与主画布共享） -->
+  <div id="fine-dialog" class="hidden fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="精细选区" data-i18n-aria="精细选区">
+    <div class="absolute inset-0 bg-paper/90" data-fine-close></div>
+    <div class="absolute inset-3 md:inset-8 flex flex-col border border-border rounded-lg bg-paper shadow-lg pointer-events-auto overflow-hidden">
+      <div class="flex items-center gap-1.5 px-4 py-2.5 border-b border-border shrink-0">
+        <span class="text-sm font-mono text-ink mr-2" data-i18n="精细选区">精细选区</span>
+        <span id="fine-zoom-val" class="text-xs font-mono text-muted w-12">100%</span>
+        <div class="ml-auto flex items-center gap-1.5">
+          <button type="button" data-fine-tool="brush" aria-label="画笔工具" data-i18n="画笔" data-i18n-aria="画笔工具" class="px-2 py-1">画笔</button>
+          <button type="button" data-fine-tool="eraser" aria-label="橡皮工具" data-i18n="橡皮" data-i18n-aria="橡皮工具" class="px-2 py-1">橡皮</button>
+          <button type="button" data-fine-tool="pan" aria-label="平移画布" data-i18n="抓手" data-i18n-aria="平移画布" class="px-2 py-1">抓手</button>
+          <button type="button" id="fine-undo" aria-label="撤销上一笔" data-i18n="撤销" data-i18n-aria="撤销上一笔" class="px-2 py-1">撤销</button>
+          <button type="button" id="fine-fit" aria-label="适应窗口" data-i18n="适应窗口" data-i18n-aria="适应窗口" class="px-2 py-1">适应窗口</button>
+          <button type="button" id="fine-done"
+            class="ml-1 px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="完成">完成</button>
+        </div>
+      </div>
+      <div id="fine-stage" class="relative flex-1 min-h-0 overflow-hidden bg-panel-2 touch-none">
+        <div id="fine-inner" class="absolute left-0 top-0 origin-top-left">
+          <img id="fine-base" class="block select-none" draggable="false" alt="修图原图" data-i18n-alt="修图原图">
+          <canvas id="fine-canvas" class="absolute left-0 top-0"></canvas>
+        </div>
+        <div id="fine-ring" class="hidden"></div>
+      </div>
+      <div class="px-4 py-2 border-t border-border text-xs text-muted shrink-0" data-i18n="滚轮缩放（以光标为中心）· 抓手拖动平移 · 放大后涂抹更精细，画笔大小跟随主面板滑杆">滚轮缩放（以光标为中心）· 抓手拖动平移 · 放大后涂抹更精细，画笔大小跟随主面板滑杆</div>
     </div>
   </div>
 

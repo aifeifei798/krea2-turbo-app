@@ -516,6 +516,7 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
     meta = {
         "id": stem,
         "prompt": task["request"]["prompt"],
+        "full_prompt": task["request"].get("full_prompt", ""),
         "styles": task["request"]["styles"],
         "role": task["request"]["role"],
         "aspect_id": task["request"]["aspect_id"],
@@ -536,8 +537,8 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
     (OUTPUT_DIR / f"{stem}.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    keys = ("prompt", "styles", "role", "common", "width", "height", "steps",
-            "seed", "batch", "rounds", "loras", "created_at")
+    keys = ("prompt", "full_prompt", "styles", "role", "common", "width",
+            "height", "steps", "seed", "batch", "rounds", "loras", "created_at")
     if task["request"]["img2img"]:
         keys += ("strength",)
     return {"id": stem, "url": f"/outputs/{stem}.jpg", **{k: meta[k] for k in keys}}
@@ -565,6 +566,8 @@ def _run_task(req: GenRequest) -> None:
         # 通用词放最前（画质词等）
         if req.common.strip():
             full_prompt = f"{req.common.strip().rstrip(',; ')}, {full_prompt}"
+        # 实际发给模型的完整提示词进 meta（灯箱可查，跨工具复现不用猜）
+        task["request"]["full_prompt"] = full_prompt
 
         # 缺的 LoRA 自动补加载（常驻，不卸载）；无请求时全部去激活
         sync_loras(req.loras)

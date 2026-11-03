@@ -1,14 +1,14 @@
 /* Krea 2 Turbo 工作台前端 · 入口：装配各模块 + 启动初始化 */
 import { $, state, toast, bindNav, apiFetch } from "./core.js";
 import { savedSettings } from "./settings.js";
-import { bindControls, renderPresets, renderExamples, renderMode, reuseAsRedraw } from "./studio.js";
+import { bindControls, renderPresets, renderExamples, renderMode, reuseAsRedraw, reuseAsInpaint } from "./studio.js";
 import { bindPicker } from "./picker.js";
 import { syncCommonBadge, bindCommonDialog } from "./common-words.js";
 import { bindQueueUI } from "./queue.js";
 import { bindCombos, syncComboBadge } from "./combos.js";
 import { bindModel, waitReady, renderPrecision, syncModelState } from "./model-page.js";
 import { renderLoras } from "./lora.js";
-import { loadGallery, bindGalleryScroll, bindLightbox, setRedrawHandler } from "./gallery.js";
+import { loadGallery, bindGalleryScroll, bindLightbox, setRedrawHandler, setInpaintHandler } from "./gallery.js";
 import { bindInpaint } from "./inpaint.js";
 import { initI18n, applyStatic, bindLangSelect } from "./i18n.js";
 
@@ -26,6 +26,7 @@ async function init() {
   bindQueueUI();
   bindCombos();
   setRedrawHandler(reuseAsRedraw);
+  setInpaintHandler(reuseAsInpaint);
   // 恢复上次的面板调整（风格/角色 id 在 renderPresets 里对列表校验后生效）
   $("prompt").value = savedSettings.prompt ?? "";
   state.selectedStyles = Array.isArray(savedSettings.selectedStyles)

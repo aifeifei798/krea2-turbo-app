@@ -90,6 +90,16 @@ bun run css:build
 curl -H "X-API-Key: $(./server.sh key)" http://127.0.0.1:8420/api/status
 ```
 
+**命令行出图**：`scripts/gen.py`（纯标准库）走同一套 API 与队列，密钥自动从 `.env` 读取：
+
+```bash
+scripts/gen.py "一只柴犬坐在铺满银杏叶的台阶上" --style photo --aspect 2:3
+scripts/gen.py "换条红围巾" --image 输入图.jpg --strength 0.75   # 图生图
+scripts/gen.py "霓虹小巷" --style cinema --rounds 4 --out-dir ./out  # 批量并收集成图
+```
+
+每张图的 meta（`outputs/*.json`）同时记录用户提示词与**拼装后的完整提示词**（通用词 + 角色 + 风格模板 + 提示词），跨工具复现不用猜。
+
 ## 结构
 
 ```

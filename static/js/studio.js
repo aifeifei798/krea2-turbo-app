@@ -203,6 +203,20 @@ function readInitImageFromBlob(blob) {
   img.src = url;
 }
 
+/* 画廊/灯箱「修图」：切修图模式 + 该图进画布 + 回填提示词 */
+export function reuseAsInpaint(img) {
+  switchMode("inpaint");
+  $("prompt").value = img.prompt || "";
+  syncDataBlock();
+  saveSettings();
+  fetch(img.url)
+    .then((r) => r.blob())
+    .then(loadInpaintFile)
+    .catch(() => toast(t("参考图读取失败"), true));
+  toast(t("已带入修图，用画笔涂抹要重绘的部位"));
+  $("prompt").focus();
+}
+
 /* 画廊「用这张重绘」：切图生图 + 历史图作参考图 + 回填当时的提示词/风格/角色 */
 export function reuseAsRedraw(img) {
   switchMode("i2i");

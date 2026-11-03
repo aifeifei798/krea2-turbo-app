@@ -10,6 +10,12 @@ export function setRedrawHandler(fn) {
   redrawHandler = fn;
 }
 
+/* 「修图」回调：由 app 注入（studio.reuseAsInpaint） */
+let inpaintHandler = null;
+export function setInpaintHandler(fn) {
+  inpaintHandler = fn;
+}
+
 function cardHTML(img) {
   const seedText = img.seed === null || img.seed === undefined ? "auto" : String(img.seed);
   const stylesText = (img.styles || []).map((s) => s.name).join(" · ")
@@ -164,6 +170,7 @@ function openLightbox(id) {
     ...(loraText ? [[t("LoRA"), loraText]] : []),
     [t("时间"), img.created_at ? fmtTime(img.created_at) : "—"],
     [t("模型"), img.model || "Krea 2 Turbo"],
+    [t("完整提示词"), img.full_prompt || "—"],
   ].map(([k, v]) => `<div class="flex gap-2"><dt class="shrink-0">${k}</dt><dd class="text-ink truncate" title="${escapeAttr(v)}">${escapeHTML(v)}</dd></div>`).join("");
   $("lb-download").href = img.url;
   $("lb-download").setAttribute("download", `${id}.jpg`);
@@ -249,6 +256,13 @@ export function bindLightbox() {
       return;
     }
     if (lightboxId) deleteImage(lightboxId);
+  });
+  // 灯箱直接送修图：生成 → 挑毛病 → 就地涂抹重绘
+  $("lb-inpaint").addEventListener("click", () => {
+    const img = state.images.find((i) => i.id === lightboxId);
+    if (!img) return;
+    closeLightbox();
+    if (inpaintHandler) inpaintHandler(img);
   });
 }
 
