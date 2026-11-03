@@ -68,7 +68,7 @@ function syncFineTools() {
   document.querySelectorAll("[data-fine-tool]").forEach((b) => {
     const on = b.dataset.fineTool === fine.tool;
     b.setAttribute("aria-pressed", String(on));
-    b.className = `px-2 py-1 rounded-sm border font-mono text-xs transition-colors ${on
+    b.className = `px-2 py-1 inline-flex items-center gap-1 rounded-sm border font-mono text-xs transition-colors ${on
       ? "border-accent bg-accent-dim text-accent"
       : "border-border bg-panel text-muted hover:border-accent hover:text-ink"}`;
   });

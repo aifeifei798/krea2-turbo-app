@@ -63,7 +63,7 @@ function disarmDelete() {
   deleteArmed = false;
   clearTimeout(deleteTimer);
   const btn = $("lb-delete");
-  btn.textContent = t("删除");
+  btn.querySelector("span").textContent = t("删除"); // 只改文字，保住图标
   btn.classList.remove("text-danger", "border-danger");
 }
 
@@ -114,7 +114,7 @@ export function bindLightbox() {
     if (!deleteArmed) {
       deleteArmed = true;
       const btn = $("lb-delete");
-      btn.textContent = t("确认删除？");
+      btn.querySelector("span").textContent = t("确认删除？");
       btn.classList.add("text-danger", "border-danger");
       deleteTimer = setTimeout(disarmDelete, 3000);
       return;

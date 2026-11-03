@@ -246,7 +246,7 @@ function syncTools() {
   document.querySelectorAll("[data-inpaint-tool]").forEach((b) => {
     const on = b.dataset.inpaintTool === tool;
     b.setAttribute("aria-pressed", String(on));
-    b.className = aspectClass(on);
+    b.className = `inline-flex items-center gap-1 px-2 shrink-0 ${aspectClass(on)}`;
   });
 }
 

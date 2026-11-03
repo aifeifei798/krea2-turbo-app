@@ -89,12 +89,17 @@ export function syncModelState(st) {
 /* 加载/卸载按钮态：加载在 未加载/失败/换精度 时可用；卸载在 就绪 时可用 */
 let lastDetail = null;
 
+const LOAD_ICON = '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>';
+const RELOAD_ICON = '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5"/></svg>';
+
 function syncLoadButtons(modelState) {
   const loading = modelState === "loading";
   const ready = modelState === "ready";
   const samePrecision = state.selectedPrecision === state.modelPrecision;
   $("model-load-btn").disabled = loading || (ready && samePrecision);
-  $("model-load-btn").textContent = ready && !samePrecision ? t("切换并重载") : t("加载模型");
+  const reload = ready && !samePrecision;
+  $("model-load-btn").innerHTML =
+    (reload ? RELOAD_ICON : LOAD_ICON) + `<span>${t(reload ? "切换并重载" : "加载模型")}</span>`;
   $("model-unload-btn").disabled = !ready || loading;
 }
 

@@ -134,6 +134,7 @@ function switchMode(id) {
     x.className = aspectClass(on);
   });
   applyModeUI();
+  syncDataBlock(); // 数据块的 SIZE 随模式变化（修图跟原图 / 其余按比例）
   saveSettings();
 }
 

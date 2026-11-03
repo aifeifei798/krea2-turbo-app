@@ -19,7 +19,8 @@ export function syncCommonBadge() {
   const btn = $("common-btn");
   const on = !!state.commonWords;
   const n = commonWordsCount(state.commonWords);
-  btn.textContent = on ? t("通用词 {n}", { n }) : t("通用词");
+  const plus = '<svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+  btn.innerHTML = plus + `<span>${on ? t("通用词 {n}", { n }) : t("通用词")}</span>`;
   btn.classList.toggle("text-accent", on);
   btn.classList.toggle("border-accent", on);
 }
