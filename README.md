@@ -38,7 +38,8 @@
 ## 启动与管理
 
 ```bash
-cp .env.example .env       # 首次使用：配置模型目录（必填 KREA_MODEL_DIR）
+./install.sh               # 一键安装（虚拟环境+依赖+交互式生成 .env）
+# 或手动：cp .env.example .env（编辑 KREA_MODEL_DIR）→ 见下方手动步骤
 chmod +x server.sh
 
 ./server.sh start          # 后台启动（默认 int8，也可指定 bf16|int8|int4；端口默认 8420）
@@ -69,7 +70,7 @@ bun run css:build
 
 ## 配置
 
-模型路径硬编码在 `server/pipeline.py` 的 `MODEL_PATH`（默认 `/home/feifei/develop/models/Krea-2-Turbo`），改后重启即可。
+模型/LoRA 目录写进 `.env`（`KREA_MODEL_DIR` / `KREA_LORA_DIR`，参考 `.env.example`；预量化目录 `KREA_MODEL_INT8_DIR`/`KREA_MODEL_INT4_DIR` 可选），改后 `./server.sh restart` 生效。
 
 ## 结构
 

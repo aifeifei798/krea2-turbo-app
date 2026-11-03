@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Krea 2 Turbo 工作台 启动/管理脚本
+# Krea 2 Turbo 工作台 · 服务管理
 #
 # 用法:
-#   ./server.sh start  [精度] [端口]   后台启动（精度 bf16|int8|int4，默认 int8，端口默认 8420）
-#   ./server.sh stop                   停止服务
-#   ./server.sh restart [精度] [端口]  重启（不带精度则沿用上次）
-#   ./server.sh status                 进程 + 模型 + 显存状态
-#   ./server.sh log [行数|-f]          查看日志（默认 50 行，-f 跟随）
-#   ./server.sh run    [精度] [端口]   前台启动（默认 int8，Ctrl+C 停止）
-#   ./server.sh help                   本说明
+#   ./server.sh start   [精度] [端口]   后台启动（默认精度 int8，默认端口 8420）
+#   ./server.sh stop                    停止服务
+#   ./server.sh restart [精度] [端口]   重启（缺省沿用上次精度）
+#   ./server.sh status                  服务 / 模型 / LoRA / 显存状态
+#   ./server.sh log     [行数|-f]       查看日志（默认 50 行，-f 跟随输出）
+#   ./server.sh run     [精度] [端口]   前台运行（Ctrl+C 停止）
+#   ./server.sh help                    显示本说明
 #
-# 兼容旧用法：./server.sh [bf16|int8|int4] 等价于 run。
+# 目录等启动配置见 .env（参考 .env.example）；兼容写法：./server.sh int8 等价于 run
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -20,6 +20,18 @@ META_FILE=".server.meta"   # 记录 precision / port 供 restart、status 使用
 LOG_FILE=".server.log"
 
 PRECISIONS="bf16|int8|int4"
+
+# ---------------------------------------------------------------- 输出工具
+
+if [ -t 1 ]; then
+  C_G=$'\033[32m' C_R=$'\033[31m' C_Y=$'\033[33m' C_C=$'\033[36m' C_DIM=$'\033[2m' C_B=$'\033[1m' C_0=$'\033[0m'
+else
+  C_G="" C_R="" C_Y="" C_C="" C_DIM="" C_B="" C_0=""
+fi
+ok()   { echo "${C_G}✓${C_0} $*"; }
+err()  { echo "${C_R}✗${C_0} $*" >&2; }
+warn() { echo "${C_Y}⚠${C_0} $*" >&2; }
+hint() { echo "${C_DIM}  $*${C_0}"; }
 
 c_url()    { curl -s --max-time 2 "http://127.0.0.1:${PORT_DEFAULT}$1" 2>/dev/null || true; }
 meta_get() { [ -f "$META_FILE" ] && grep -m1 "^$1=" "$META_FILE" | cut -d= -f2 || true; }
@@ -39,35 +51,42 @@ port_pid() {
   echo "$pid"
 }
 
-# 等待 API 报告模型 ready/error，最多 max_s 秒；输出最终状态行
-wait_ready() {
-  local max_s="${1:-180}" waited=0 state=""
-  while [ "$waited" -lt "$max_s" ]; do
-    state=$(curl -s --max-time 2 http://127.0.0.1:${PORT_DEFAULT}/api/model 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['state'])" 2>/dev/null || echo "")
-    case "$state" in
-      ready|error)
-        curl -s --max-time 2 http://127.0.0.1:${PORT_DEFAULT}/api/model | python3 -c \
-          "import json,sys;d=json.load(sys.stdin);print(f\"▸ 模型状态: {d['state']} · {d['detail']}\")"
-        return 0 ;;
-    esac
-    sleep 3; waited=$((waited+3))
-    printf "▸ 模型加载中 %ds…\r" "$waited"
-  done
-  echo "▸ 等待超时（${max_s}s），可稍后用 status 查看"; return 0
-}
-
 valid_precision() { case "$1" in bf16|int8|int4) return 0 ;; *) return 1 ;; esac; }
 
 # 预检：模型目录必须已配置且为有效检查点（.env 提供，见 .env.example）
 check_model_dir() {
   if [ -z "${KREA_MODEL_DIR:-}" ]; then
-    echo "✗ 未配置模型目录：复制 .env.example 为 .env 并设置 KREA_MODEL_DIR（见 README）" >&2
+    err "未配置模型目录 —— 复制 .env.example 为 .env 并设置 KREA_MODEL_DIR（见 README）"
     exit 1
   fi
   if [ ! -f "$KREA_MODEL_DIR/model_index.json" ]; then
-    echo "✗ KREA_MODEL_DIR 不是有效的 diffusers 模型目录（缺 model_index.json）: $KREA_MODEL_DIR" >&2
+    err "KREA_MODEL_DIR 不是有效的 diffusers 模型目录（缺 model_index.json）: $KREA_MODEL_DIR"
     exit 1
   fi
+}
+
+# 等待 API 报告模型 ready/error，最多 max_s 秒；输出最终状态行
+wait_ready() {
+  local max_s="${1:-180}" waited=0 state="" detail=""
+  while [ "$waited" -lt "$max_s" ]; do
+    json=$(curl -s --max-time 2 http://127.0.0.1:${PORT_DEFAULT}/api/model 2>/dev/null || true)
+    if [ -n "$json" ]; then
+      read -r state detail < <(echo "$json" | python3 -c \
+        "import json,sys;d=json.load(sys.stdin);print(d['state'], d['detail'])" 2>/dev/null || true)
+      case "$state" in
+        ready)
+          echo "${C_G}✓${C_0} 模型就绪  ${C_B}${detail}${C_0}"
+          return 0 ;;
+        error)
+          echo "${C_R}✗${C_0} 模型加载失败  ${detail}"
+          return 0 ;;
+      esac
+    fi
+    sleep 3; waited=$((waited+3))
+    printf "  模型加载中 %ds…\r" "$waited"
+  done
+  warn "等待超时（${max_s}s）—— 稍后用 ./server.sh status 查看状态"
+  return 0
 }
 
 # ---------------------------------------------------------------- 动作
@@ -76,20 +95,25 @@ do_start() {
   local precision="${1:-}" port="${2:-}" pid portp
   [ -z "$precision" ] && precision=$(meta_get precision); [ -z "$precision" ] && precision=int8
   [ -z "$port" ] && port=$(meta_get port); [ -z "$port" ] && port=$PORT_DEFAULT
-  valid_precision "$precision" || { echo "未知精度: $precision（可选 $PRECISIONS）" >&2; exit 1; }
-  case "$port" in ''|*[!0-9]*) echo "非法端口: $port" >&2; exit 1 ;; esac
+  valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | int8 | int4）"; exit 1; }
+  case "$port" in ''|*[!0-9]*) err "无效端口 \"$port\""; exit 1 ;; esac
 
   pid=$(pid_file_pid)
   if pid_alive "$pid"; then
-    echo "服务已在运行（PID $pid），如需重启用: ./server.sh restart"; exit 1
+    err "服务已在运行（PID $pid）—— 重启请用 ./server.sh restart"
+    exit 1
   fi
   rm -f "$PID_FILE"
   portp=$(port_pid "$port")
   if [ -n "$portp" ]; then
-    echo "端口 $port 已被 PID $portp 占用（可能是未登记的实例），先处理它再用 start" >&2; exit 1
+    err "端口 $port 已被 PID $portp 占用 —— 释放端口后再启动"
+    exit 1
   fi
 
-  if [ ! -x .venv/bin/python ]; then echo "未找到 .venv，请先按 README 创建 Python 环境" >&2; exit 1; fi
+  if [ ! -x .venv/bin/python ]; then
+    err "未找到 .venv —— 先运行 ./install.sh 完成安装"
+    exit 1
+  fi
 
   # .env（可选）：模型/LoRA 目录等启动配置，见 .env.example
   set -a; [ -f .env ] && . ./.env; set +a
@@ -105,60 +129,77 @@ do_start() {
   pid=$!
   echo "$pid" > "$PID_FILE"
   meta_set precision "$precision"; meta_set port "$port"
-  echo "▸ 已启动: PID $pid · 精度 $precision · 端口 $port · 日志 $LOG_FILE"
+  ok "服务已启动  ${C_DIM}PID $pid · 端口 $port · 精度 $precision · 日志 $LOG_FILE${C_0}"
   sleep 2
-  pid_alive "$pid" || { echo "✗ 进程启动后立刻退出，查看: ./server.sh log 30" >&2; tail -5 "$LOG_FILE" >&2 || true; exit 1; }
-  echo "▸ 服务端口已就绪，模型后台加载中（首次需几分钟）"
+  pid_alive "$pid" || { err "进程启动后立即退出 —— 查看原因：./server.sh log 30"; tail -5 "$LOG_FILE" >&2 || true; exit 1; }
+  ok "端口就绪，模型加载中（首次约 1–2 分钟）"
   wait_ready 180
+  echo "${C_DIM}→ 日志 ./server.sh log -f${C_0}"
 }
 
 do_stop() {
   local pid portp
   pid=$(pid_file_pid)
   if pid_alive "$pid"; then
-    echo "▸ 停止 PID $pid …"
     kill "$pid" 2>/dev/null || true
     for _ in $(seq 1 20); do pid_alive "$pid" || break; sleep 0.5; done
-    pid_alive "$pid" && { echo "▸ 强制结束"; kill -9 "$pid" 2>/dev/null || true; }
-    echo "▸ 已停止"
+    if pid_alive "$pid"; then
+      warn "进程未响应，已强制结束"
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    ok "已停止  ${C_DIM}PID $pid${C_0}"
   elif [ -n "$pid" ]; then
-    echo "▸ PID $pid 已不在运行"
+    hint "PID $pid 已退出，清理记录"
   else
-    echo "▸ 没有 PID 记录"
+    hint "没有运行中的实例"
   fi
   portp=$(port_pid "${2:-$PORT_DEFAULT}")
-  [ -n "$portp" ] && echo "⚠ 端口 ${2:-$PORT_DEFAULT} 仍被 PID $portp 占用（非本脚本启动？）" >&2
+  [ -n "$portp" ] && warn "端口 ${2:-$PORT_DEFAULT} 仍被 PID $portp 占用（非本脚本启动的进程）"
   rm -f "$PID_FILE"
 }
 
 do_status() {
-  local pid port precision state json
+  local pid port precision json portp
   port=$(meta_get port); [ -z "$port" ] && port=$PORT_DEFAULT
-  precision=$(meta_get precision); [ -z "$precision" ] && precision="?"
+  precision=$(meta_get precision); [ -z "$precision" ] && precision="—"
   pid=$(pid_file_pid)
-  echo "═══ Krea 2 Turbo 工作台 ═══"
+  echo "${C_B}Krea 2 Turbo 工作台${C_0}"
+  echo "${C_DIM}────────────────────────────────────────────${C_0}"
+
   if pid_alive "$pid"; then
-    echo "进程:   运行中 · PID $pid · 端口 $port · 上次精度 $precision"
+    echo "  服务    ${C_G}● 运行中${C_0}   PID $pid · 端口 $port · 精度 $precision"
   else
     portp=$(port_pid "$port")
     if [ -n "$portp" ]; then
-      echo "进程:   PID $portp 占用端口 $port（非本脚本登记）"
+      echo "  服务    ${C_Y}● 端口占用${C_0} PID $portp（非本脚本登记）"
     else
-      echo "进程:   未运行（启动: ./server.sh start [精度]）"
-      echo "═══"; return 0
+      echo "  服务    ○ 未运行  ${C_DIM}—— ./server.sh start 启动${C_0}"
+      echo "${C_DIM}────────────────────────────────────────────${C_0}"
+      return 0
     fi
   fi
-  json=$(curl -s --max-time 2 "http://127.0.0.1:$port/api/model")
+
+  json=$(c_url "/api/model")
   if [ -n "$json" ]; then
-    echo "$json" | python3 -c "import json,sys;d=json.load(sys.stdin);print(f\"模型:   {d['state']} · {d['detail']}\")"
-    lora=$(curl -s --max-time 2 "http://127.0.0.1:$port/api/loras" | python3 -c "import json,sys;ls=json.load(sys.stdin);print(sum(1 for l in ls if l['loaded']), '/', len(ls))" 2>/dev/null || echo "?")
-    echo "LoRA:   已加载 $lora"
+    read -r m_state m_detail < <(echo "$json" | python3 -c \
+      "import json,sys;d=json.load(sys.stdin);print(d['state'], d['detail'])" 2>/dev/null || true)
+    case "$m_state" in
+      ready)   echo "  模型    ${C_G}● 就绪${C_0}     $m_detail" ;;
+      loading) echo "  模型    ${C_Y}◐ 加载中${C_0}   $m_detail" ;;
+      error)   echo "  模型    ${C_R}● 失败${C_0}     $m_detail" ;;
+      *)       echo "  模型    ○ 未加载" ;;
+    esac
+    lora=$(c_url "/api/loras" | python3 -c "import json,sys;ls=json.load(sys.stdin);print(f\"{sum(1 for l in ls if l['loaded'])} / {len(ls)} 已加载\")" 2>/dev/null || echo "—")
+    echo "  LoRA    $lora"
   else
-    echo "模型:   API 无响应（可能模型加载中或服务异常，看: ./server.sh log 30）"
+    echo "  模型    — API 无响应（可能加载中或服务异常，./server.sh log 30）"
   fi
-  command -v nvidia-smi >/dev/null 2>&1 && \
-    nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader | head -1 | \
-    awk -F', ' '{printf "显存:   %s / %s\n", $1, $2}'
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    vram=$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader | head -1 | awk -F', ' '{print $1 " / " $2}')
+    echo "  显存    $vram"
+  fi
+  echo "${C_DIM}────────────────────────────────────────────${C_0}"
+  echo "${C_DIM}  日志 ./server.sh log -f · 帮助 ./server.sh help${C_0}"
 }
 
 do_log() {
@@ -168,13 +209,16 @@ do_log() {
 
 do_run() {
   local precision="${1:-int8}" port="${2:-$PORT_DEFAULT}" pid
-  valid_precision "$precision" || { echo "未知精度: $precision（可选 $PRECISIONS）" >&2; exit 1; }
-  [ ! -x .venv/bin/python ] && { echo "未找到 .venv，请先按 README 创建 Python 环境" >&2; exit 1; }
+  valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | int8 | int4）"; exit 1; }
+  if [ ! -x .venv/bin/python ]; then
+    err "未找到 .venv —— 先运行 ./install.sh 完成安装"
+    exit 1
+  fi
   set -a; [ -f .env ] && . ./.env; set +a
   check_model_dir
   export KREA_PRECISION="$precision"
   meta_set precision "$precision"; meta_set port "$port"
-  echo "▸ 前台运行 · 精度 $precision · 端口 $port（Ctrl+C 停止）"
+  ok "前台运行  ${C_DIM}精度 $precision · 端口 $port（Ctrl+C 停止）${C_0}"
   .venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port "$port" &
   pid=$!
   echo "$pid" > "$PID_FILE"
@@ -203,6 +247,6 @@ case "$CMD" in
   help|-h|--help) do_help ;;
   bf16|int8|int4) do_run "$@" ;;
   "")      do_help ;;
-  *)       echo "未知命令: $CMD（可选 start | stop | restart | status | log | run | help）" >&2
+  *)       err "未知命令 \"$CMD\" —— 可用：start | stop | restart | status | log | run | help"
            do_help >&2; exit 1 ;;
 esac
