@@ -15,6 +15,7 @@ const state = {
   defaultSteps: 8,
   aspect: "1:1",
   mode: "t2i", // t2i 文生图 | i2i 图生图重绘
+  commonWords: "", // 通用词：每次生成放在提示词最前（画质词等）
   initImage: null, // 参考图 base64（不含 data: 前缀）
   initThumb: null, // 参考图缩略 dataURL
   loras: [], // {id, name, filename, size_mb, on(=已加载), weight}
@@ -54,6 +55,7 @@ function saveSettings() {
     prompt: $("prompt").value,
     selectedStyles: state.selectedStyles,
     role: state.selectedRole,
+    commonWords: state.commonWords,
     aspect: state.aspect,
     mode: state.mode,
     strength: Number($("strength").value),
@@ -276,7 +278,6 @@ function switchView(view) {
 function bindNav() {
   document.querySelectorAll("[data-view]").forEach((btn) =>
     btn.addEventListener("click", () => switchView(btn.dataset.view)));
-  $("goto-models").addEventListener("click", () => switchView("models"));
   $("lora-summary").addEventListener("click", () => switchView("models"));
 }
 
@@ -354,13 +355,15 @@ function syncStyleSummary() {
     .map((id) => state.styles.find((s) => s.id === id)?.name)
     .filter(Boolean);
   const el = $("style-summary");
-  el.textContent = names.length ? names.join(" · ") : "无";
-  el.classList.toggle("text-muted", !names.length);
+  el.textContent = names.length ? `风格 · ${names.length}` : "选择风格";
+  el.classList.toggle("is-on", names.length > 0);
+  el.title = names.length ? names.join(" · ") : "可多选最多 4 个，弹窗里按使用频率排序";
   const role = state.selectedRole
     ? state.roles.find((r) => r.id === state.selectedRole) : null;
   const rel = $("role-summary");
-  rel.textContent = role ? role.name : "无";
-  rel.classList.toggle("text-muted", !role);
+  rel.textContent = role ? `角色 · ${role.name}` : "选择角色";
+  rel.classList.toggle("is-on", !!role);
+  rel.title = role ? role.name : "单选，弹窗里按使用频率排序";
 }
 
 function openPicker(mode) {
@@ -491,6 +494,73 @@ function confirmPicker() {
   closePicker();
 }
 
+/* ---------- 通用词（放在提示词最前的画质/质量词） ---------- */
+
+const COMMON_PRESETS = [
+  "masterpiece, best quality",
+  "ultra detailed, 8k",
+  "delicate face, detailed eyes",
+  "perfect anatomy",
+  "cinematic composition",
+];
+
+const commonWordsCount = (v) =>
+  v.trim() ? v.split(/[,，;；]/).filter((s) => s.trim()).length : 0;
+
+function syncCommonBadge() {
+  const btn = $("common-btn");
+  const on = !!state.commonWords;
+  const n = commonWordsCount(state.commonWords);
+  btn.textContent = on ? `通用词 ${n}` : "通用词";
+  btn.classList.toggle("text-accent", on);
+  btn.classList.toggle("border-accent", on);
+}
+
+function openCommonDialog() {
+  $("common-text").value = state.commonWords;
+  renderCommonChips();
+  updateCommonInfo();
+  $("common-dialog").classList.remove("hidden");
+  $("common-text").focus();
+}
+
+function closeCommonDialog() {
+  $("common-dialog").classList.add("hidden");
+}
+
+function renderCommonChips() {
+  const box = $("common-chips");
+  box.innerHTML = "";
+  COMMON_PRESETS.forEach((words) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = words;
+    b.title = "点击追加";
+    b.className = "px-2 py-1 rounded-sm border border-border bg-panel text-xs text-muted hover:border-accent hover:text-ink transition-colors";
+    b.addEventListener("click", () => {
+      const cur = $("common-text").value.trim().replace(/[,;\s]+$/, "");
+      $("common-text").value = cur ? `${cur}, ${words}` : words;
+      updateCommonInfo();
+    });
+    box.appendChild(b);
+  });
+}
+
+function updateCommonInfo() {
+  const v = $("common-text").value.trim();
+  const n = commonWordsCount(v);
+  $("common-info").textContent = n ? `${n} 个词，将放在提示词最前` : "未填写";
+}
+
+function saveCommonWords() {
+  const v = $("common-text").value.trim().replace(/[,;\s]+$/, "");
+  state.commonWords = v;
+  saveSettings();
+  syncCommonBadge();
+  closeCommonDialog();
+  toast(v ? "通用词已保存，将放在提示词最前" : "通用词已清空");
+}
+
 function currentAspect() {
   return state.aspects.find((a) => a.id === state.aspect) || { width: 1024, height: 1024 };
 }
@@ -560,6 +630,16 @@ function bindControls() {
     saveSettings();
   });
   $("generate-btn").addEventListener("click", generate);
+  $("common-btn").addEventListener("click", openCommonDialog);
+  $("common-close").addEventListener("click", closeCommonDialog);
+  $("common-dialog").querySelector("[data-close]").addEventListener("click", closeCommonDialog);
+  $("common-save").addEventListener("click", saveCommonWords);
+  $("common-text").addEventListener("input", updateCommonInfo);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("common-dialog").classList.contains("hidden")) {
+      closeCommonDialog();
+    }
+  });
   $("style-summary").addEventListener("click", () => openPicker("style"));
   $("role-summary").addEventListener("click", () => openPicker("role"));
   $("picker-close").addEventListener("click", closePicker);
@@ -765,22 +845,16 @@ async function toggleLora(i) {
   }
 }
 
-/* 制作页的 LoRA 摘要条 + 模型页加载计数 */
+/* 制作页的 LoRA 入口按钮 + 模型页加载计数 */
 function syncLoraSummary() {
-  const active = activeLoras();
   const names = state.loras.filter((l) => l.on);
   const summary = $("lora-summary");
-  if (!names.length) {
-    summary.textContent = "未加载";
-    summary.classList.add("text-muted");
-    summary.classList.remove("text-ink");
-    $("lora-active-count").textContent = "";
-  } else {
-    summary.textContent = names.map((l) => `${l.name} ${l.weight.toFixed(2)}`).join(" · ");
-    summary.classList.remove("text-muted");
-    summary.classList.add("text-ink");
-    $("lora-active-count").textContent = `${names.length} 个已加载`;
-  }
+  summary.textContent = names.length ? `LoRA · ${names.length}` : "选择 LoRA";
+  summary.classList.toggle("is-on", names.length > 0);
+  summary.title = names.length
+    ? names.map((l) => `${l.name} ${l.weight.toFixed(2)}`).join(" · ")
+    : "在「模型」页管理加载与强度";
+  $("lora-active-count").textContent = names.length ? `${names.length} 个已加载` : "";
 }
 
 const activeLoras = () =>
@@ -871,12 +945,15 @@ function finishTask(taskId) {
     clearInterval(state.pollTimer);
     state.pollTimer = null;
     closeQueuePop();
+    $("current-progress").classList.add("hidden");
   }
 }
 
-/* 轮询所有活跃任务：各自更新行内进度/上屏图片，终态收尾 */
+/* 轮询所有活跃任务：各自更新行内进度/上屏图片，终态收尾；并同步按钮下的当前进度条 */
 async function pollActiveTasks() {
   const ids = Object.keys(state.activeTasks);
+  let running = null; // {text, pct}
+  let queued = 0;
   await Promise.all(ids.map(async (taskId) => {
     let task;
     try {
@@ -889,6 +966,7 @@ async function pollActiveTasks() {
       return;
     }
     if (task.state === "queued") {
+      queued += 1;
       updateQueueRow(taskId, "排队中，模型就绪后自动开始", 0, false);
       return;
     }
@@ -896,8 +974,9 @@ async function pollActiveTasks() {
       const total = task.total_steps || 1;
       const roundText = (task.rounds || 1) > 1 ? `第 ${task.round}/${task.rounds} 轮 · ` : "";
       const canceled = task.cancel ? "停止中 · " : "";
-      updateQueueRow(taskId, `${canceled}${roundText}扩散中 ${task.step}/${total}`,
-        (task.step / total) * 100, true);
+      const text = `${canceled}${roundText}扩散中 ${task.step}/${total}`;
+      running = { text, pct: (task.step / total) * 100 };
+      updateQueueRow(taskId, text, running.pct, true);
       showTaskImages(task);
       return;
     }
@@ -906,6 +985,22 @@ async function pollActiveTasks() {
     else if (task.canceled) toast(`已停止，保留了 ${task.images.length} 张已完成的图`);
     finishTask(taskId);
   }));
+  updateCurrentProgress(running, queued);
+}
+
+/* 生成按钮下的当前进度：有运行中的显示实时进度，全在排队则显示队列数 */
+function updateCurrentProgress(running, queued) {
+  const wrap = $("current-progress");
+  if (!running && !queued) {
+    wrap.classList.add("hidden");
+    return;
+  }
+  wrap.classList.remove("hidden");
+  const pct = running ? Math.max(0, Math.min(100, running.pct)) : 0;
+  $("cp-bar").style.transform = `scaleX(${pct / 100})`;
+  $("cp-pct").textContent = `${Math.round(pct)}%`;
+  $("cp-text").textContent = running ? running.text : `队列中 ${queued} 个任务等待处理`;
+  wrap.setAttribute("aria-valuenow", String(Math.round(pct)));
 }
 
 /* 队列行取消：还在排队的立即摘行（反正不会出图）；运行中的走后端 interrupt，
@@ -982,6 +1077,7 @@ async function generate() {
     prompt,
     styles: state.selectedStyles,
     role: state.selectedRole,
+    common: state.commonWords,
     aspect: state.aspect,
     steps: Number($("steps").value),
     seed,
@@ -1184,6 +1280,7 @@ function openLightbox(id) {
   $("lb-meta").innerHTML = [
     ["风格", (img.styles || []).map((s) => s.name).join(" · ") || img.style_name || "—"],
     ...(img.role ? [["角色", img.role.name]] : []),
+    ...(img.common ? [["通用词", img.common]] : []),
     ["尺寸", img.width ? `${img.width}×${img.height}` : "—"],
     ["步数", img.steps || "—"],
     ["种子", seedText],
@@ -1255,6 +1352,9 @@ async function init() {
   state.selectedStyles = Array.isArray(savedSettings.selectedStyles)
     ? savedSettings.selectedStyles : [];
   state.selectedRole = savedSettings.role || null;
+  state.commonWords = typeof savedSettings.commonWords === "string"
+    ? savedSettings.commonWords : "";
+  syncCommonBadge();
   state.aspect = savedSettings.aspect || "1:1";
   state.mode = savedSettings.mode === "i2i" ? "i2i" : "t2i";
   $("strength").value = savedSettings.strength ?? 0.6;
