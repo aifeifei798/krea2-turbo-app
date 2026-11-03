@@ -7,6 +7,10 @@
 ## 特性
 
 - **8 步蒸馏出图**：`guidance_scale=0.0`，RTX 5090 上 1024² 约几秒一张
+- **风格/角色预设**（历史 ComfyUI 预设迁移，`scripts/port_presets.py` 生成 `server/style_data.py`）
+  - 风格 800+ 条中文名（弹窗选择：搜索中英文、分类分组、**按使用频率置顶**），可多选最多 4 个，按选择顺序嵌套 `{prompt}` 模板
+  - 角色 56 条单选（多为专有人名保留原名），描述前置
+  - 使用频率记入 `.usage.json`（按任务计，成功才计）；风格 negative_prompt 数据保留但 CFG=0 下不生效
 - **图生图重绘（SDEdit）**：「模式 → 图生图」上传参考图 + 重绘幅度 0.05–0.95——参考图按比例中心裁剪后 VAE 编码，按幅度截断 sigma 表加噪去噪（与 QwenImage 官方管线同一套 `latents_mean/std` 编码约定）；构图保留、提示词改风格/细节，批量/次数/LoRA/种子全部通用
 - **LoRA 混合**：模型加载完成后 `loras/` 目录的 LoRA **默认全部加载并常驻显存**（不随生成自动卸载），默认强度 0.4；「模型」页开关可单独卸载/重载，强度 0–2 独立调节、拖动即时生效
   - 自动兼容两种格式：diffusers PEFT 格式直载；ComfyUI/kohya 格式（`diffusion_model.` 前缀）自动把 `alpha` 标量按 `alpha/rank` 预乘进 `lora_B` 后加载

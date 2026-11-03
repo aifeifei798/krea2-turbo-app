@@ -8,3 +8,4 @@ __pycache__/
 .server.pid
 .server.meta
 .server.log
+.usage.json

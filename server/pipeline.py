@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .presets import DEFAULT_STEPS, get_aspect, get_style
+from .presets import DEFAULT_STEPS, get_aspect, get_role, get_style, record_usage
 
 logger = logging.getLogger("krea.pipeline")
 
@@ -76,11 +76,12 @@ TASK_TTL = 3600  # 完成任务保留 1 小时供前端查询
 class GenRequest:
     task_id: str
     prompt: str
-    style_id: str
-    aspect_id: str
-    steps: int
-    seed: int | None
-    batch: int
+    styles: list[str] = field(default_factory=list)  # 风格 id，按选择顺序嵌套模板
+    role: str | None = None  # 角色 id（单选）
+    aspect_id: str = "1:1"
+    steps: int = 8
+    seed: int | None = None
+    batch: int = 1
     rounds: int = 1  # 跑几轮：每轮独立管线调用（batch 张/轮），种子逐轮 +1
     init_image: str | None = None  # base64 参考图（有值 = 图生图重绘）
     strength: float = 0.6  # 重绘幅度 0-1：越大越偏离原图
@@ -408,12 +409,13 @@ def _dynamic_shift_mu(seq_len: int) -> float:
 # ---------------------------------------------------------------- 生成任务
 
 def _new_task(req: GenRequest) -> dict:
-    style = get_style(req.style_id)
     aspect = get_aspect(req.aspect_id)
     all_loras = {l["id"]: l for l in list_loras()}
     is_i2i = bool(req.init_image)
     # 重绘按幅度跳过前段 sigma，每轮实际去噪步数变少（进度条按真实步数计）
     steps_per_round = _img2img_schedule(req.steps, req.strength)[1] if is_i2i else req.steps
+    role = get_role(req.role)
+    role = role if role and role["id"] == req.role else None  # 未知角色忽略
     return {
         "task_id": req.task_id,
         "state": "queued",
@@ -426,8 +428,9 @@ def _new_task(req: GenRequest) -> dict:
         "images": [],
         "request": {
             "prompt": req.prompt,
-            "style_id": style["id"],
-            "style_name": style["name"],
+            "styles": [{"id": sid, "name": get_style(sid)["name"]}
+                       for sid in req.styles if get_style(sid)["id"] == sid],
+            "role": {"id": role["id"], "name": role["name"]} if role else None,
             "aspect_id": aspect["id"],
             "width": aspect["width"],
             "height": aspect["height"],
@@ -462,8 +465,8 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
     meta = {
         "id": stem,
         "prompt": task["request"]["prompt"],
-        "style_id": task["request"]["style_id"],
-        "style_name": task["request"]["style_name"],
+        "styles": task["request"]["styles"],
+        "role": task["request"]["role"],
         "aspect_id": task["request"]["aspect_id"],
         "width": task["request"]["width"],
         "height": task["request"]["height"],
@@ -480,7 +483,7 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
     (OUTPUT_DIR / f"{stem}.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    keys = ("prompt", "style_name", "width", "height", "steps", "seed",
+    keys = ("prompt", "styles", "role", "width", "height", "steps", "seed",
             "batch", "rounds", "loras", "created_at")
     if task["request"]["img2img"]:
         keys += ("strength",)
@@ -493,10 +496,19 @@ def _run_task(req: GenRequest) -> None:
         return
     task["state"] = "running"
     try:
+        # 风格按选择顺序嵌套模板（{prompt} 替换为当前内容），角色描述前置
         full_prompt = req.prompt.strip()
-        suffix = get_style(req.style_id)["suffix"]
-        if suffix:
-            full_prompt = f"{full_prompt}, {suffix}"
+        for sid in req.styles:
+            tpl = get_style(sid)["template"]
+            if not tpl:
+                continue
+            if "{prompt}" in tpl:
+                full_prompt = tpl.replace("{prompt}", full_prompt)
+            else:
+                full_prompt = f"{full_prompt}, {tpl}"
+        role = get_role(req.role)
+        if role and role["prompt"]:
+            full_prompt = f"{role['prompt'].rstrip(',; ')}, {full_prompt}"
 
         # 缺的 LoRA 自动补加载（常驻，不卸载）；无请求时全部去激活
         sync_loras(req.loras)
@@ -560,6 +572,7 @@ def _run_task(req: GenRequest) -> None:
                 task["images"].append(
                     _save_image(image, task, seed, round_idx * req.batch + i))
         task["state"] = "done"
+        record_usage(req.styles, req.role)  # 成功才计使用频率
     except Exception as exc:  # noqa: BLE001 - 生成失败细节透出给前端
         logger.exception("generation failed")
         task["state"] = "error"
@@ -596,14 +609,16 @@ def start_background() -> None:
     threading.Thread(target=_worker, name="gen-worker", daemon=True).start()
 
 
-def enqueue(prompt: str, style_id: str, aspect_id: str, steps: int,
+def enqueue(prompt: str, aspect_id: str, steps: int,
             seed: int | None, batch: int, rounds: int = 1,
+            styles: list[str] | None = None, role: str | None = None,
             init_image: str | None = None, strength: float = 0.6,
             loras: list[tuple[str, float]] | None = None) -> str:
     req = GenRequest(
         task_id=uuid.uuid4().hex[:12],
         prompt=prompt,
-        style_id=style_id,
+        styles=styles or [],
+        role=role,
         aspect_id=aspect_id,
         steps=steps,
         seed=seed,

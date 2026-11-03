@@ -18,7 +18,8 @@ from . import pipeline
 
 # pipeline 的 INFO（模型加载/LoRA 装载/状态迁移）落到 .server.log，便于排查卡顿
 logging.basicConfig(level=logging.INFO)
-from .presets import ASPECTS, DEFAULT_STEPS, MAX_BATCH, MAX_ROUNDS, MAX_STEPS, STYLES
+from .presets import (DEFAULT_STEPS, MAX_BATCH, MAX_ROUNDS, MAX_STYLES,
+                      MAX_STEPS, get_presets, get_role, get_style)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -51,7 +52,8 @@ class LoraIn(BaseModel):
 
 class GenerateIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
-    style: str = "none"
+    styles: list[str] = Field(default_factory=list, max_length=MAX_STYLES)
+    role: str | None = None
     aspect: str = "1:1"
     steps: int = Field(default=DEFAULT_STEPS, ge=2, le=MAX_STEPS)
     seed: int | None = Field(default=None, ge=0, le=2**63 - 1)  # torch.Generator 上限
@@ -100,8 +102,7 @@ def model_unload():
 
 @app.get("/api/presets")
 def presets():
-    return {"styles": STYLES, "aspects": ASPECTS,
-            "default_steps": DEFAULT_STEPS, "max_steps": MAX_STEPS}
+    return get_presets()
 
 
 @app.get("/api/loras")
@@ -132,6 +133,18 @@ def generate(body: GenerateIn):
     for lora in body.loras:
         if lora.id not in known:
             raise HTTPException(400, f"未知 LoRA: {lora.id}")
+    # 风格/角色 id 校验（风格去重保序）
+    seen: set[str] = set()
+    styles = []
+    for sid in body.styles:
+        if sid not in seen:
+            seen.add(sid)
+            styles.append(sid)
+    for sid in styles:
+        if get_style(sid)["id"] != sid:
+            raise HTTPException(400, f"未知风格: {sid}")
+    if body.role and get_role(body.role) is None:
+        raise HTTPException(400, f"未知角色: {body.role}")
     # 参考图必须是可解码的有效图片
     if body.init_image is not None:
         try:
@@ -139,8 +152,9 @@ def generate(body: GenerateIn):
         except Exception:  # noqa: BLE001 - 解码失败统一回 400
             raise HTTPException(400, "参考图不是有效的图片数据") from None
     task_id = pipeline.enqueue(
-        prompt=body.prompt, style_id=body.style, aspect_id=body.aspect,
+        prompt=body.prompt, aspect_id=body.aspect,
         steps=body.steps, seed=body.seed, batch=body.batch, rounds=body.rounds,
+        styles=styles, role=body.role,
         init_image=body.init_image, strength=body.strength,
         loras=[(l.id, l.weight) for l in body.loras])
     return {"task_id": task_id}

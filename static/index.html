@@ -19,7 +19,29 @@
       <button id="nav-models" type="button" data-view="models" aria-current="false"
         class="px-2.5 py-1.5 text-sm font-mono border-b border-transparent text-muted hover:text-ink transition-colors">模型</button>
     </nav>
-    <span id="status-badge" class="ml-auto inline-flex items-center gap-2 font-mono text-xs px-2 py-1 rounded-sm border border-border text-muted">
+
+    <!-- 任务队列入口 + 弹出面板 -->
+    <div class="relative ml-auto flex items-center gap-2">
+      <button id="queue-btn" type="button" aria-label="生成队列" aria-expanded="false"
+        class="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border border-border font-mono text-xs text-muted hover:border-accent hover:text-ink transition-colors">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <path d="M1 2.5h10M1 6h10M1 9.5h6"/>
+        </svg><span class="hidden sm:inline">队列</span>
+        <span id="queue-count" class="hidden min-w-4 h-4 px-1 inline-flex items-center justify-center rounded-full bg-accent text-paper text-xs leading-none">0</span>
+      </button>
+      <div id="queue-pop" class="hidden absolute right-0 top-full mt-2 w-72 max-w-[85vw] z-50 border border-border rounded-md bg-paper shadow-lg">
+        <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
+          <span class="text-xs font-mono text-muted">生成队列</span>
+          <button id="queue-cancel-all" type="button"
+            class="ml-auto text-xs font-mono text-muted hover:text-danger transition-colors">全部取消</button>
+          <button id="queue-close" type="button" aria-label="关闭队列面板"
+            class="text-muted hover:text-ink text-sm leading-none">×</button>
+        </div>
+        <div id="queue-list" class="max-h-80 overflow-y-auto p-2 flex flex-col gap-1.5" role="list"></div>
+      </div>
+    </div>
+
+    <span id="status-badge" class="inline-flex items-center gap-2 font-mono text-xs px-2 py-1 rounded-sm border border-border text-muted">
       <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-muted"></span><span id="status-text">连接中…</span>
     </span>
   </header>
@@ -69,12 +91,18 @@
           class="w-full resize-y min-h-24 bg-panel border border-border rounded-md px-3 py-2 text-sm leading-relaxed placeholder:text-muted/60 focus:border-accent"></textarea>
       </div>
 
-      <!-- 风格预设 -->
+      <!-- 风格（多选，弹窗选择） -->
       <div>
-        <span class="block text-xs font-mono text-muted mb-2">风格 STYLE</span>
-        <div id="style-chips" class="flex flex-wrap gap-1.5" role="group" aria-label="风格预设">
-          <!-- JS 填充 -->
-        </div>
+        <span class="block text-xs font-mono text-muted mb-2">风格 STYLE <span class="text-muted/60">可多选 · 常用置顶</span></span>
+        <button id="style-summary" type="button" aria-label="打开风格选择器"
+          class="w-full text-left px-3 py-2.5 rounded-md border border-border bg-panel text-sm text-muted hover:border-accent transition-colors truncate">无</button>
+      </div>
+
+      <!-- 角色（单选，弹窗选择） -->
+      <div>
+        <span class="block text-xs font-mono text-muted mb-2">角色 ROLE <span class="text-muted/60">单选</span></span>
+        <button id="role-summary" type="button" aria-label="打开角色选择器"
+          class="w-full text-left px-3 py-2.5 rounded-md border border-border bg-panel text-sm text-muted hover:border-accent transition-colors truncate">无</button>
       </div>
 
       <!-- 比例 -->
@@ -165,26 +193,13 @@
         </div>
       </div>
 
-      <!-- 生成 + 进度 -->
+      <!-- 生成 -->
       <div>
         <button id="generate-btn" type="button" disabled
           class="w-full h-11 rounded-md bg-accent text-paper font-display font-bold tracking-wide text-base transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
           生成 <span class="font-mono">▸</span>
         </button>
-        <div id="progress-wrap" class="hidden mt-3" role="progressbar" aria-label="生成进度"
-          aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-          <div class="h-0.5 bg-border rounded-full overflow-hidden">
-            <div id="progress-bar" class="h-full w-full bg-accent origin-left scale-x-0 transition-transform duration-200"></div>
-          </div>
-          <div class="flex justify-between mt-1.5 font-mono text-xs text-muted">
-            <span id="progress-text">排队中…</span>
-            <span id="progress-pct" class="pulse-dot">0%</span>
-          </div>
-        </div>
-        <button id="cancel-btn" type="button" aria-label="停止生成本次任务"
-          class="hidden mt-2 w-full h-9 rounded-md border border-border bg-panel text-sm text-muted hover:text-danger hover:border-danger transition-colors">
-          停止生成
-        </button>
+        <p class="mt-1.5 text-xs text-muted">可连续提交多个任务，进度与取消见右上角队列</p>
       </div>
     </section>
 
@@ -281,6 +296,27 @@
   </div>
 
   <!-- 灯箱 -->
+  <!-- 风格/角色选择弹窗 -->
+  <div id="picker" class="hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="风格与角色选择">
+    <div class="absolute inset-0 bg-paper/90" data-close></div>
+    <div class="absolute inset-x-3 top-[5vh] bottom-[5vh] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-3xl flex flex-col border border-border rounded-lg bg-paper shadow-lg pointer-events-auto">
+      <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
+        <span id="picker-title" class="text-sm font-mono text-ink shrink-0">选择风格</span>
+        <input id="picker-search" type="text" placeholder="搜索（中文/英文）"
+          class="ml-auto w-40 md:w-60 bg-panel border border-border rounded-md px-2.5 py-1.5 text-xs font-mono placeholder:text-muted/60 focus:border-accent">
+        <button id="picker-close" type="button" aria-label="关闭选择器"
+          class="text-muted hover:text-ink text-lg leading-none px-1">×</button>
+      </div>
+      <div id="picker-body" class="flex-1 overflow-y-auto p-3"></div>
+      <div class="flex items-center gap-3 px-4 py-2.5 border-t border-border">
+        <span id="picker-info" class="text-xs font-mono text-muted truncate"></span>
+        <button id="picker-clear" type="button" class="ml-auto text-xs font-mono text-muted hover:text-ink transition-colors">清空</button>
+        <button id="picker-ok" type="button"
+          class="px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity">确定</button>
+      </div>
+    </div>
+  </div>
+
   <div id="lightbox" class="fixed inset-0 z-50 bg-paper/90 hidden" role="dialog" aria-modal="true" aria-label="图片详情">
     <div class="absolute inset-0" data-close></div>
     <div class="relative h-full flex flex-col lg:flex-row items-center justify-center gap-6 p-4 lg:p-10 pointer-events-none">

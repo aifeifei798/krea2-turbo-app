@@ -4,11 +4,15 @@
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  styles: [],
+  styles: [], // {id, name, name_en, category, usage}
+  roles: [], // {id, name, name_en, usage}
+  selectedStyles: [], // 已选风格 id（有序，最多 MAX_STYLES 个）
+  selectedRole: null, // 已选角色 id（单选，null = 无）
+  pickerMode: null, // "style" | "role" | null（选择弹窗当前模式）
+  pickerSelected: null, // 弹窗内的暂选（style: 数组 / role: id）
   aspects: [],
   maxSteps: 16,
   defaultSteps: 8,
-  style: "none",
   aspect: "1:1",
   mode: "t2i", // t2i 文生图 | i2i 图生图重绘
   initImage: null, // 参考图 base64（不含 data: 前缀）
@@ -20,7 +24,7 @@ const state = {
   modelState: null,
   modelPrecision: null,
   generating: false,
-  shownTaskImages: 0, // 当前任务已插入画廊的图片数（次数模式边跑边出图）
+  activeTasks: {}, // taskId -> {shown(已上屏数), snippet}（任务队列）
   galleryTotal: 0, // 服务端作品总数（分页：本地只载窗口）
   galleryHasMore: false,
   loadingMore: false,
@@ -48,7 +52,8 @@ const savedSettings = readSettings(); // 启动时读一次存档
 function saveSettings() {
   const data = {
     prompt: $("prompt").value,
-    style: state.style,
+    selectedStyles: state.selectedStyles,
+    role: state.selectedRole,
     aspect: state.aspect,
     mode: state.mode,
     strength: Number($("strength").value),
@@ -106,7 +111,7 @@ async function pollStatus() {
       setStatus("模型就绪", "bg-accent");
       $("loading-overlay").classList.add("hidden");
       $("loading-overlay").classList.remove("flex");
-      $("generate-btn").disabled = state.generating;
+      $("generate-btn").disabled = false; // 队列化提交：模型就绪即可继续加任务
       // 精度切换后（新模型实例）LoRA 由后端重新全量加载，刷新一次同步开关与默认强度
       if (state.modelPrecision !== null && state.modelPrecision !== st.precision) {
         const loras = await fetch("/api/loras").then((r) => r.json()).catch(() => null);
@@ -286,11 +291,16 @@ async function waitReady() {
 
 function renderPresets(data) {
   state.styles = data.styles;
+  state.roles = data.roles || [];
   state.aspects = data.aspects;
   state.maxSteps = data.max_steps;
   state.defaultSteps = data.default_steps;
-  // 恢复上次的调整（存档里的 id 已失效则回默认）
-  if (!state.styles.some((s) => s.id === state.style)) state.style = "none";
+  // 恢复上次的调整（存档里的 id 已失效则丢弃）
+  state.selectedStyles = state.selectedStyles.filter(
+    (id) => state.styles.some((s) => s.id === id));
+  if (state.selectedRole && !state.roles.some((r) => r.id === state.selectedRole)) {
+    state.selectedRole = null;
+  }
   if (!state.aspects.some((a) => a.id === state.aspect)) state.aspect = "1:1";
   $("steps").value = savedSettings.steps ?? state.defaultSteps;
   const setSelect = (id, v) => {
@@ -299,27 +309,7 @@ function renderPresets(data) {
   setSelect("batch", savedSettings.batch);
   setSelect("rounds", savedSettings.rounds);
   if (typeof savedSettings.seed === "string") $("seed").value = savedSettings.seed;
-
-  const chips = $("style-chips");
-  chips.innerHTML = "";
-  state.styles.forEach((s) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = s.name;
-    b.dataset.id = s.id;
-    b.setAttribute("aria-pressed", String(s.id === state.style));
-    b.className = chipClass(s.id === state.style);
-    b.addEventListener("click", () => {
-      state.style = s.id;
-      chips.querySelectorAll("button").forEach((x) => {
-        const on = x.dataset.id === state.style;
-        x.setAttribute("aria-pressed", String(on));
-        x.className = chipClass(on);
-      });
-      saveSettings();
-    });
-    chips.appendChild(b);
-  });
+  syncStyleSummary();
 
   const aspects = $("aspect-group");
   aspects.innerHTML = "";
@@ -349,15 +339,157 @@ function renderPresets(data) {
   syncDataBlock();
 }
 
-const chipClass = (on) =>
-  `px-2.5 py-1 rounded-sm border text-xs transition-colors ${on
-    ? "border-accent bg-accent-dim text-accent"
-    : "border-border bg-panel text-muted hover:border-accent hover:text-ink"}`;
-
 const aspectClass = (on) =>
   `py-1.5 rounded-sm border font-mono text-xs transition-colors ${on
     ? "border-accent bg-accent-dim text-accent"
     : "border-border bg-panel text-muted hover:border-accent hover:text-ink"}`;
+
+/* ---------- 风格/角色选择弹窗 ---------- */
+
+const PICKER_MAX_STYLES = 4; // 与后端 MAX_STYLES 一致
+
+/* 摘要行：已选内容回显（无则显示灰字「无」） */
+function syncStyleSummary() {
+  const names = state.selectedStyles
+    .map((id) => state.styles.find((s) => s.id === id)?.name)
+    .filter(Boolean);
+  const el = $("style-summary");
+  el.textContent = names.length ? names.join(" · ") : "无";
+  el.classList.toggle("text-muted", !names.length);
+  const role = state.selectedRole
+    ? state.roles.find((r) => r.id === state.selectedRole) : null;
+  const rel = $("role-summary");
+  rel.textContent = role ? role.name : "无";
+  rel.classList.toggle("text-muted", !role);
+}
+
+function openPicker(mode) {
+  state.pickerMode = mode;
+  state.pickerSelected = mode === "style" ? [...state.selectedStyles] : state.selectedRole;
+  $("picker-title").textContent = mode === "style"
+    ? "选择风格（可多选，按使用频率排序）" : "选择角色";
+  $("picker-search").value = "";
+  $("picker-clear").classList.toggle("hidden", mode !== "style");
+  renderPickerList("");
+  $("picker").classList.remove("hidden");
+  $("picker-search").focus();
+}
+
+function closePicker() {
+  $("picker").classList.add("hidden");
+  state.pickerMode = null;
+}
+
+const pickerChipClass = (on) =>
+  `px-2.5 py-1.5 rounded-sm border text-xs max-w-full truncate transition-colors ${on
+    ? "border-accent bg-accent-dim text-accent"
+    : "border-border bg-panel text-muted hover:border-accent hover:text-ink"}`;
+
+function renderPickerList(query) {
+  const q = query.trim().toLowerCase();
+  const body = $("picker-body");
+  body.innerHTML = "";
+  const isStyle = state.pickerMode === "style";
+  const all = isStyle ? state.styles : state.roles;
+  const filtered = all.filter((it) => !q
+    || it.name.toLowerCase().includes(q)
+    || (it.name_en || "").toLowerCase().includes(q));
+
+  const groups = new Map();
+  const usedIds = new Set();
+  if (isStyle && !q) {
+    // 常用 TOP：用过的风格按次数排最前（分组后不再重复出现）
+    const used = filtered.filter((s) => s.usage > 0);
+    if (used.length) {
+      groups.set("常用 TOP", used);
+      used.forEach((s) => usedIds.add(s.id));
+    }
+  }
+  for (const it of filtered) {
+    if (usedIds.has(it.id)) continue;
+    const cat = isStyle ? (it.category || "其他") : "全部角色";
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(it);
+  }
+
+  if (!filtered.length) {
+    body.innerHTML = `<div class="py-16 text-center text-sm text-muted">没有匹配的${isStyle ? "风格" : "角色"}</div>`;
+    updatePickerInfo();
+    return;
+  }
+  for (const [cat, items] of groups) {
+    if (cat) {
+      const h = document.createElement("div");
+      h.className = "text-xs font-mono text-muted mt-4 mb-1.5 first:mt-0";
+      h.textContent = cat;
+      body.appendChild(h);
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "flex flex-wrap gap-1.5";
+    items.forEach((it) => {
+      const on = isStyle
+        ? state.pickerSelected.includes(it.id)
+        : state.pickerSelected === it.id;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.id = it.id;
+      b.title = `${it.name_en || it.name}${it.usage ? ` · 已用 ${it.usage} 次` : ""}`;
+      b.textContent = it.name;
+      b.className = pickerChipClass(on);
+      b.addEventListener("click", () => onPickerChip(it.id));
+      wrap.appendChild(b);
+    });
+    body.appendChild(wrap);
+  }
+  updatePickerInfo();
+}
+
+function onPickerChip(id) {
+  if (state.pickerMode === "role") {
+    state.pickerSelected = state.pickerSelected === id ? null : id;
+  } else {
+    const sel = state.pickerSelected;
+    const i = sel.indexOf(id);
+    if (i >= 0) sel.splice(i, 1);
+    else {
+      if (sel.length >= PICKER_MAX_STYLES) {
+        toast(`最多同时选 ${PICKER_MAX_STYLES} 个风格`, true);
+        return;
+      }
+      sel.push(id);
+    }
+  }
+  // 原地更新选中态，避免重渲染导致滚动位置跳动
+  document.querySelectorAll("#picker-body [data-id]").forEach((b) => {
+    const on = state.pickerMode === "role"
+      ? state.pickerSelected === b.dataset.id
+      : state.pickerSelected.includes(b.dataset.id);
+    b.className = pickerChipClass(on);
+  });
+  updatePickerInfo();
+}
+
+function updatePickerInfo() {
+  const isStyle = state.pickerMode === "style";
+  if (isStyle) {
+    const names = state.pickerSelected
+      .map((id) => state.styles.find((s) => s.id === id)?.name)
+      .filter(Boolean);
+    $("picker-info").textContent = names.length
+      ? `已选 ${names.length}/${PICKER_MAX_STYLES}：${names.join(" · ")}` : "未选择（无风格）";
+  } else {
+    const r = state.roles.find((x) => x.id === state.pickerSelected);
+    $("picker-info").textContent = r ? `已选：${r.name}` : "未选择（无角色）";
+  }
+}
+
+function confirmPicker() {
+  if (state.pickerMode === "style") state.selectedStyles = [...state.pickerSelected];
+  else state.selectedRole = state.pickerSelected || null;
+  syncStyleSummary();
+  saveSettings();
+  closePicker();
+}
 
 function currentAspect() {
   return state.aspects.find((a) => a.id === state.aspect) || { width: 1024, height: 1024 };
@@ -428,8 +560,34 @@ function bindControls() {
     saveSettings();
   });
   $("generate-btn").addEventListener("click", generate);
-  $("cancel-btn").addEventListener("click", cancelTask);
+  $("style-summary").addEventListener("click", () => openPicker("style"));
+  $("role-summary").addEventListener("click", () => openPicker("role"));
+  $("picker-close").addEventListener("click", closePicker);
+  $("picker").querySelector("[data-close]").addEventListener("click", closePicker);
+  $("picker-ok").addEventListener("click", confirmPicker);
+  $("picker-clear").addEventListener("click", () => {
+    state.pickerSelected = state.pickerMode === "style" ? [] : null;
+    renderPickerList($("picker-search").value);
+  });
+  $("picker-search").addEventListener("input", (e) => renderPickerList(e.target.value));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("picker").classList.contains("hidden")) closePicker();
+  });
   $("refresh-btn").addEventListener("click", () => loadGallery().catch(() => toast("刷新失败", true)));
+  // 队列弹层：按钮开合、关闭按钮、点外部收起、全部取消
+  $("queue-btn").addEventListener("click", () => {
+    const pop = $("queue-pop");
+    const nowOpen = pop.classList.contains("hidden");
+    pop.classList.toggle("hidden", !nowOpen);
+    $("queue-btn").setAttribute("aria-expanded", String(nowOpen));
+  });
+  $("queue-close").addEventListener("click", closeQueuePop);
+  $("queue-cancel-all").addEventListener("click", cancelAllQueued);
+  document.addEventListener("click", (e) => {
+    if ($("queue-pop").classList.contains("hidden")) return;
+    if (e.target.closest("#queue-pop") || e.target.closest("#queue-btn")) return;
+    closeQueuePop();
+  });
   // 提示词里 Ctrl/Cmd+Enter 直接提交
   $("prompt").addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); generate(); }
@@ -631,7 +789,7 @@ const activeLoras = () =>
 
 /* FastAPI 校验错误（422 detail 数组）转可读中文 */
 const FIELD_NAMES = {
-  prompt: "提示词", style: "风格", aspect: "比例", steps: "步数",
+  prompt: "提示词", styles: "风格", role: "角色", aspect: "比例", steps: "步数",
   seed: "种子", batch: "批量", rounds: "次数", strength: "重绘幅度",
   init_image: "参考图", loras: "LoRA", weight: "强度",
 };
@@ -658,30 +816,147 @@ function friendlyApiError(err) {
   return `HTTP ${err?.status || ""}`.trim() || "未知错误";
 }
 
-/* ---------- 生成流程 ---------- */
+/* ---------- 生成队列 ---------- */
 
-function setProgress(step, total, text) {
-  const pct = total > 0 ? Math.round((step / total) * 100) : 0;
-  $("progress-bar").style.transform = `scaleX(${pct / 100})`;
-  $("progress-pct").textContent = `${pct}%`;
-  $("progress-text").textContent = text;
-  $("progress-wrap").setAttribute("aria-valuenow", String(pct));
+/* 提交成功后登记任务并渲染队列行；轮询器在有活跃任务期间常开 */
+function trackTask(taskId, snippet) {
+  state.activeTasks[taskId] = { shown: 0, snippet };
+  renderQueueRow(taskId);
+  updateQueueBadge();
+  if (!state.pollTimer) state.pollTimer = setInterval(pollActiveTasks, 500);
 }
 
-function setGenerating(on) {
-  state.generating = on;
-  const btn = $("generate-btn");
-  btn.disabled = on || !state.modelReady;
-  $("progress-wrap").classList.toggle("hidden", !on);
-  $("cancel-btn").classList.toggle("hidden", !on);
-  if (on) {
-    $("cancel-btn").disabled = false;
-    btn.innerHTML = '生成中 <span class="font-mono">…</span>';
-    setProgress(0, 1, "排队中…");
-  } else {
-    btn.innerHTML = '生成 <span class="font-mono">▸</span>';
-    state.currentTask = null;
+function updateQueueBadge() {
+  const n = Object.keys(state.activeTasks).length;
+  $("queue-count").textContent = String(n);
+  $("queue-count").classList.toggle("hidden", n === 0);
+}
+
+function renderQueueRow(taskId) {
+  const st = state.activeTasks[taskId];
+  const row = document.createElement("div");
+  row.dataset.task = taskId;
+  row.className = "border border-border rounded-md bg-panel px-2.5 py-2";
+  row.innerHTML = `
+    <div class="flex items-center gap-2">
+      <span data-dot class="w-1.5 h-1.5 rounded-full bg-accent pulse-dot shrink-0"></span>
+      <span class="text-xs truncate flex-1" title="${escapeAttr(st.snippet)}">${escapeHTML(st.snippet)}</span>
+      <button type="button" data-cancel="${taskId}" aria-label="取消此任务"
+        class="shrink-0 w-6 h-6 rounded-sm border border-border text-muted hover:text-danger hover:border-danger transition-colors text-sm leading-none">×</button>
+    </div>
+    <div class="mt-1.5 h-0.5 bg-border rounded-full overflow-hidden">
+      <div data-bar class="h-full w-full bg-accent origin-left scale-x-0 transition-transform duration-200"></div>
+    </div>
+    <div data-text class="mt-1 font-mono text-xs text-muted">排队中，模型就绪后自动开始</div>`;
+  row.querySelector("[data-cancel]").addEventListener("click", () => cancelQueuedTask(taskId));
+  $("queue-list").appendChild(row);
+}
+
+function updateQueueRow(taskId, text, pct, running) {
+  const row = document.querySelector(`[data-task="${taskId}"]`);
+  if (!row) return;
+  row.dataset.running = running ? "1" : "0";
+  row.querySelector("[data-text]").textContent = text;
+  row.querySelector("[data-bar]").style.transform = `scaleX(${Math.max(0, Math.min(100, pct || 0)) / 100})`;
+  const dot = row.querySelector("[data-dot]");
+  dot.className = `w-1.5 h-1.5 rounded-full shrink-0 ${running ? "bg-accent pulse-dot" : "bg-muted"}`;
+}
+
+/* 单个任务收尾：摘行、停轮询、收起弹层 */
+function finishTask(taskId) {
+  delete state.activeTasks[taskId];
+  document.querySelector(`[data-task="${taskId}"]`)?.remove();
+  updateQueueBadge();
+  if (!Object.keys(state.activeTasks).length) {
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+    closeQueuePop();
   }
+}
+
+/* 轮询所有活跃任务：各自更新行内进度/上屏图片，终态收尾 */
+async function pollActiveTasks() {
+  const ids = Object.keys(state.activeTasks);
+  await Promise.all(ids.map(async (taskId) => {
+    let task;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      task = await res.json();
+    } catch (e) {
+      toast(`进度查询失败：${e.message}`, true);
+      finishTask(taskId);
+      return;
+    }
+    if (task.state === "queued") {
+      updateQueueRow(taskId, "排队中，模型就绪后自动开始", 0, false);
+      return;
+    }
+    if (task.state === "running") {
+      const total = task.total_steps || 1;
+      const roundText = (task.rounds || 1) > 1 ? `第 ${task.round}/${task.rounds} 轮 · ` : "";
+      const canceled = task.cancel ? "停止中 · " : "";
+      updateQueueRow(taskId, `${canceled}${roundText}扩散中 ${task.step}/${total}`,
+        (task.step / total) * 100, true);
+      showTaskImages(task);
+      return;
+    }
+    showTaskImages(task); // 失败/取消前已出的图也保留
+    if (task.state === "error") toast(`生成失败：${task.error}`, true);
+    else if (task.canceled) toast(`已停止，保留了 ${task.images.length} 张已完成的图`);
+    finishTask(taskId);
+  }));
+}
+
+/* 队列行取消：还在排队的立即摘行（反正不会出图）；运行中的走后端 interrupt，
+   当前轮丢弃、已完成轮保留，轮询到终态再摘行 */
+async function cancelQueuedTask(taskId) {
+  const row = document.querySelector(`[data-task="${taskId}"]`);
+  const isRunning = row?.dataset.running === "1";
+  try {
+    const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (isRunning) {
+      updateQueueRow(taskId, "停止中…", null, false);
+    } else {
+      finishTask(taskId);
+      toast("已取消排队任务");
+    }
+  } catch (e) {
+    toast(`停止失败：${e.message}`, true);
+  }
+}
+
+/* 全部取消：排队的立即摘行，运行中的逐个 interrupt */
+async function cancelAllQueued() {
+  const ids = Object.keys(state.activeTasks);
+  if (!ids.length) return;
+  await Promise.allSettled(
+    ids.map((id) => fetch(`/api/tasks/${id}/cancel`, { method: "POST" })));
+  ids.forEach((id) => {
+    const row = document.querySelector(`[data-task="${id}"]`);
+    if (row?.dataset.running === "1") updateQueueRow(id, "停止中…", null, false);
+    else finishTask(id);
+  });
+  toast("已请求取消全部任务");
+}
+
+function closeQueuePop() {
+  $("queue-pop").classList.add("hidden");
+  $("queue-btn").setAttribute("aria-expanded", "false");
+}
+
+/* 把 task.images 里尚未进画廊的部分插进去（次数模式每轮出图即上屏） */
+function showTaskImages(task) {
+  const st = state.activeTasks[task.task_id];
+  if (!st) return;
+  const fresh = (task.images || []).slice(st.shown);
+  if (!fresh.length) return;
+  st.shown = task.images.length;
+  state.images.unshift(...fresh);
+  state.galleryTotal += fresh.length;
+  insertCards(fresh);
+  $("gallery-count").textContent = String(state.galleryTotal);
 }
 
 const SEED_MAX = 9007199254740991; // Number.MAX_SAFE_INTEGER，torch 上限之内
@@ -691,7 +966,6 @@ async function generate() {
   if (!prompt) { toast("请先输入提示词", true); return; }
   if (prompt.length > 4000) { toast("提示词超过 4000 字，请精简", true); return; }
   if (state.mode === "i2i" && !state.initImage) { toast("图生图模式请先上传参考图", true); return; }
-  if (state.generating) return;
 
   const seedRaw = $("seed").value.trim();
   let seed = null;
@@ -706,7 +980,8 @@ async function generate() {
   }
   const body = {
     prompt,
-    style: state.style,
+    styles: state.selectedStyles,
+    role: state.selectedRole,
     aspect: state.aspect,
     steps: Number($("steps").value),
     seed,
@@ -735,80 +1010,16 @@ async function generate() {
     return;
   }
 
-  state.currentTask = data.task_id;
-  state.shownTaskImages = 0;
-  setGenerating(true);
-  pollTask(data.task_id);
-}
-
-/* 把 task.images 里尚未进画廊的部分插进去（次数模式每轮出图即上屏） */
-function showTaskImages(task) {
-  const fresh = (task.images || []).slice(state.shownTaskImages);
-  if (!fresh.length) return;
-  state.shownTaskImages = task.images.length;
-  state.images.unshift(...fresh);
-  state.galleryTotal += fresh.length;
-  insertCards(fresh);
-  $("gallery-count").textContent = String(state.galleryTotal);
-}
-
-/* 请求停止当前/排队任务：当前轮丢弃，已完成轮保留 */
-async function cancelTask() {
-  if (!state.currentTask) return;
-  try {
-    const res = await fetch(`/api/tasks/${state.currentTask}/cancel`, { method: "POST" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    $("cancel-btn").disabled = true;
-    toast("已请求停止，当前轮丢弃、已完成轮保留");
-  } catch (e) {
-    toast(`停止失败：${e.message}`, true);
-  }
-}
-
-function pollTask(taskId) {
-  clearInterval(state.pollTimer);
-  state.pollTimer = setInterval(async () => {
-    let task;
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      task = await res.json();
-    } catch (e) {
-      clearInterval(state.pollTimer);
-      toast(`进度查询失败：${e.message}`, true);
-      setGenerating(false);
-      return;
-    }
-    if (task.state === "queued") {
-      // 排队：前面的任务未完，或模型加载中（就绪后 worker 自动开跑）
-      setProgress(0, task.total_steps || 1, "排队中，模型就绪后自动开始");
-      return;
-    }
-    if (task.state === "running") {
-      const total = task.total_steps || 1;
-      const roundText = (task.rounds || 1) > 1
-        ? `第 ${task.round}/${task.rounds} 轮 · ` : "";
-      setProgress(task.step, total, `${roundText}扩散中 ${task.step}/${total}`);
-      showTaskImages(task);
-      return;
-    }
-    clearInterval(state.pollTimer);
-    showTaskImages(task); // 失败/取消前已出的图也保留
-    if (task.state === "error") {
-      toast(`生成失败：${task.error}`, true);
-      setGenerating(false);
-      return;
-    }
-    if (task.canceled) toast(`已停止，保留了 ${task.images.length} 张已完成的图`);
-    setProgress(task.total_steps, task.total_steps, task.canceled ? "已停止" : "完成");
-    setTimeout(() => setGenerating(false), 400);
-  }, 500);
+  trackTask(data.task_id, prompt.slice(0, 40));
 }
 
 /* ---------- 画廊 ---------- */
 
 function cardHTML(img) {
   const seedText = img.seed === null || img.seed === undefined ? "auto" : String(img.seed);
+  const stylesText = (img.styles || []).map((s) => s.name).join(" · ")
+    || img.style_name || "自由发挥";
+  const roleText = img.role ? ` · ${img.role.name}` : "";
   return `
     <figure class="group relative border border-border rounded-md overflow-hidden bg-panel cursor-pointer" data-id="${img.id}" tabindex="0" role="button" aria-label="查看：${escapeAttr((img.prompt || "未命名图片").slice(0, 40))}">
       <div class="w-full aspect-[4/3] bg-panel-2 flex items-center justify-center overflow-hidden">
@@ -816,7 +1027,7 @@ function cardHTML(img) {
       </div>
       <figcaption class="absolute inset-x-0 bottom-0 hidden group-hover:block group-focus-within:block bg-paper/85 px-3 py-2">
         <div class="flex items-center gap-2 font-mono text-xs text-muted">
-          <span class="text-ink truncate">${escapeHTML(img.style_name || "自由发挥")}</span>
+          <span class="text-ink truncate">${escapeHTML(stylesText + roleText)}</span>
           <span class="shrink-0">${img.width}×${img.height}</span>
           <span class="shrink-0">seed ${seedText}</span>
         </div>
@@ -971,7 +1182,8 @@ function openLightbox(id) {
   const seedText = img.seed === null || img.seed === undefined ? "auto" : String(img.seed);
   const loraText = (img.loras || []).map((l) => `${l.name} ${l.weight.toFixed(2)}`).join(" · ");
   $("lb-meta").innerHTML = [
-    ["风格", img.style_name || "—"],
+    ["风格", (img.styles || []).map((s) => s.name).join(" · ") || img.style_name || "—"],
+    ...(img.role ? [["角色", img.role.name]] : []),
     ["尺寸", img.width ? `${img.width}×${img.height}` : "—"],
     ["步数", img.steps || "—"],
     ["种子", seedText],
@@ -1038,9 +1250,11 @@ async function init() {
   bindNav();
   bindModel();
   bindLightbox();
-  // 恢复上次的面板调整（风格/比例/参数在 renderPresets 里对列表校验后生效）
+  // 恢复上次的面板调整（风格/角色 id 在 renderPresets 里对列表校验后生效）
   $("prompt").value = savedSettings.prompt ?? "";
-  state.style = savedSettings.style || "none";
+  state.selectedStyles = Array.isArray(savedSettings.selectedStyles)
+    ? savedSettings.selectedStyles : [];
+  state.selectedRole = savedSettings.role || null;
   state.aspect = savedSettings.aspect || "1:1";
   state.mode = savedSettings.mode === "i2i" ? "i2i" : "t2i";
   $("strength").value = savedSettings.strength ?? 0.6;
