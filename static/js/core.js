@@ -14,10 +14,11 @@ export const state = {
   maxSteps: 16,
   defaultSteps: 8,
   aspect: "1:1",
-  mode: "t2i", // t2i 文生图 | i2i 图生图重绘
+  mode: "t2i", // t2i 文生图 | i2i 图生图重绘 | inpaint 修图（局部重绘）
   commonWords: "", // 通用词：每次生成放在提示词最前（画质词等）
   initImage: null, // 参考图 base64（不含 data: 前缀）
   initThumb: null, // 参考图缩略 dataURL
+  inpaintDims: null, // 修图原图尺寸 {width, height}（数据块显示用）
   loras: [], // {id, name, filename, size_mb, on(=已加载), weight}
   selectedPrecision: "bf16",
   precisionHints: {},
@@ -77,7 +78,9 @@ export function currentAspect() {
 export function syncDataBlock() {
   const a = currentAspect();
   $("data-steps").textContent = $("steps").value;
-  $("data-size").textContent = a.width === a.height ? `${a.width}²` : `${a.width}×${a.height}`;
+  $("data-size").textContent = state.mode === "inpaint"
+    ? (state.inpaintDims ? `${state.inpaintDims.width}×${state.inpaintDims.height}` : "跟原图")
+    : (a.width === a.height ? `${a.width}²` : `${a.width}×${a.height}`);
   const seedVal = $("seed").value.trim();
   $("data-seed").textContent = seedVal === "" ? "auto" : seedVal;
 }
@@ -109,7 +112,7 @@ export function bindNav() {
 export const FIELD_NAMES = {
   prompt: "提示词", styles: "风格", role: "角色", aspect: "比例", steps: "步数",
   seed: "种子", batch: "批量", rounds: "次数", strength: "重绘幅度",
-  init_image: "参考图", loras: "LoRA", weight: "强度",
+  init_image: "参考图", mask_image: "蒙版", loras: "LoRA", weight: "强度",
 };
 
 export function friendlyApiError(err) {

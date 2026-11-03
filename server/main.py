@@ -61,6 +61,7 @@ class GenerateIn(BaseModel):
     batch: int = Field(default=1, ge=1, le=MAX_BATCH)
     rounds: int = Field(default=1, ge=1, le=MAX_ROUNDS)
     init_image: str | None = Field(default=None, max_length=8_000_000)  # base64 参考图（重绘）
+    mask_image: str | None = Field(default=None, max_length=8_000_000)  # base64 蒙版（白=重绘）
     strength: float = Field(default=0.6, ge=0.05, le=0.95)  # 重绘幅度
     loras: list[LoraIn] = Field(default_factory=list, max_length=8)
 
@@ -128,7 +129,8 @@ def lora_toggle(body: LoraToggleIn):
 
 @app.post("/api/generate")
 def generate(body: GenerateIn):
-    if not body.prompt.strip() and not body.common.strip():
+    # 修图（有蒙版）时提示词可空：只靠通用词/风格引导，或让涂抹区自然重生成
+    if not body.prompt.strip() and not body.common.strip() and body.mask_image is None:
         raise HTTPException(400, "提示词与通用词不能同时为空")
     state = pipeline.get_model_state()
     # loading 状态不拒绝：任务入队，worker 等模型就绪后自动开跑
@@ -159,11 +161,20 @@ def generate(body: GenerateIn):
             pipeline._decode_image_b64(body.init_image)
         except Exception:  # noqa: BLE001 - 解码失败统一回 400
             raise HTTPException(400, "参考图不是有效的图片数据") from None
+    # 蒙版：必须伴随参考图，且自身可解码
+    if body.mask_image is not None:
+        if body.init_image is None:
+            raise HTTPException(400, "局部重绘需要同时提供原图与蒙版")
+        try:
+            pipeline._decode_image_b64(body.mask_image)
+        except Exception:  # noqa: BLE001 - 解码失败统一回 400
+            raise HTTPException(400, "蒙版不是有效的图片数据") from None
     task_id = pipeline.enqueue(
         prompt=body.prompt, aspect_id=body.aspect,
         steps=body.steps, seed=body.seed, batch=body.batch, rounds=body.rounds,
         styles=styles, role=body.role, common=body.common.strip(),
-        init_image=body.init_image, strength=body.strength,
+        init_image=body.init_image, mask_image=body.mask_image,
+        strength=body.strength,
         loras=[(l.id, l.weight) for l in body.loras])
     return {"task_id": task_id}
 

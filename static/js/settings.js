@@ -24,6 +24,8 @@ export function saveSettings() {
     aspect: state.aspect,
     mode: state.mode,
     strength: Number($("strength").value),
+    inpaintStrength: Number($("inpaint-strength").value),
+    inpaintBrush: Number($("inpaint-brush").value),
     steps: Number($("steps").value),
     batch: Number($("batch").value),
     rounds: Number($("rounds").value),

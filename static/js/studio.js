@@ -5,6 +5,7 @@ import { syncStyleSummary } from "./picker.js";
 import { syncCommonBadge } from "./common-words.js";
 import { generate } from "./queue.js";
 import { loadGallery } from "./gallery.js";
+import { loadInpaintFile } from "./inpaint.js";
 
 export function renderPresets(data) {
   state.styles = data.styles;
@@ -94,10 +95,13 @@ export function bindControls() {
     if ([...(e.dataTransfer?.types || [])].includes("Files")) e.preventDefault();
   });
   document.addEventListener("drop", (e) => {
-    if (e.target.closest?.("#i2i-drop")) return; // 上传框自己的 handler 已处理
-    e.preventDefault();
+    if (e.target.closest?.("#i2i-drop") || e.target.closest?.("#inpaint-drop")) return;
+    e.preventDefault(); // 上传框自己的 handler 已处理
     const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith("image/"));
-    if (file) {
+    if (!file) return;
+    // 按当前模式路由：文生图顺手切到图生图，修图模式进修图画布
+    if (state.mode === "inpaint") loadInpaintFile(file);
+    else {
       switchMode("i2i");
       readInitImage(file);
     }
@@ -136,7 +140,7 @@ const I2I_MAX_EDGE = 1536; // 参考图最长边上限（控制请求体积；�
 export function renderMode() {
   const group = $("mode-group");
   group.innerHTML = "";
-  [["t2i", "文生图"], ["i2i", "图生图"]].forEach(([id, label]) => {
+  [["t2i", "文生图"], ["i2i", "图生图"], ["inpaint", "修图"]].forEach(([id, label]) => {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
@@ -149,12 +153,17 @@ export function renderMode() {
   applyModeUI();
 }
 
-/* 图生图面板显隐 + 生成按钮文案 */
+/* 各模式面板显隐 + 生成按钮文案 */
 function applyModeUI() {
   const i2i = state.mode === "i2i";
+  const inpaint = state.mode === "inpaint";
   $("i2i-panel").classList.toggle("hidden", !i2i);
+  $("inpaint-panel").classList.toggle("hidden", !inpaint);
+  $("aspect-row").classList.toggle("hidden", inpaint); // 修图：尺寸跟原图
   $("generate-btn").innerHTML =
-    i2i ? "重绘 <span class=\"font-mono\">▸</span>" : "生成 <span class=\"font-mono\">▸</span>";
+    i2i ? "重绘 <span class=\"font-mono\">▸</span>"
+      : inpaint ? "修图 <span class=\"font-mono\">▸</span>"
+        : "生成 <span class=\"font-mono\">▸</span>";
 }
 
 function setInitImage(b64, thumb) {

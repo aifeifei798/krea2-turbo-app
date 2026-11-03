@@ -3,6 +3,7 @@ import { $, state, toast, escapeHTML, escapeAttr, friendlyApiError, syncDataBloc
 import { saveSettings } from "./settings.js";
 import { insertCards } from "./gallery.js";
 import { activeLoras } from "./lora.js";
+import { hasMask, getInpaintPayload } from "./inpaint.js";
 
 /* 提交成功后登记任务并渲染队列行；轮询器在有活跃任务期间常开 */
 function trackTask(taskId, snippet) {
@@ -194,13 +195,16 @@ const SEED_MAX = 9007199254740991; // Number.MAX_SAFE_INTEGER，torch 上限之�
 
 export async function generate() {
   const prompt = $("prompt").value.trim();
-  // 通用词会拼在提示词最前，填写了通用词即视为有内容
-  if (!prompt && !(state.commonWords || "").trim()) {
+  const isInpaint = state.mode === "inpaint";
+  // 通用词会拼在提示词最前，填写了通用词即视为有内容；修图（有蒙版）提示词可留空
+  if (!prompt && !(state.commonWords || "").trim() && !isInpaint) {
     toast("请先输入提示词或通用词", true);
     return;
   }
   if (prompt.length > 4000) { toast("提示词超过 4000 字，请精简", true); return; }
   if (state.mode === "i2i" && !state.initImage) { toast("图生图模式请先上传参考图", true); return; }
+  if (isInpaint && !hasMask()) { toast("先上传图片并用画笔涂抹要重绘的区域", true); return; }
+  const inpaint = isInpaint ? getInpaintPayload() : null;
 
   const seedRaw = $("seed").value.trim();
   let seed = null;
@@ -218,14 +222,20 @@ export async function generate() {
     styles: state.selectedStyles,
     role: state.selectedRole,
     common: state.commonWords,
-    aspect: state.aspect,
+    aspect: isInpaint ? "auto" : state.aspect, // 修图：尺寸跟原图
     steps: Number($("steps").value),
     seed,
     batch: Number($("batch").value),
     rounds: Number($("rounds").value),
-    ...(state.mode === "i2i" && state.initImage
-      ? { init_image: state.initImage, strength: Number($("strength").value) }
-      : {}),
+    ...(isInpaint
+      ? {
+          init_image: inpaint.init_image,
+          mask_image: inpaint.mask_image,
+          strength: Number($("inpaint-strength").value),
+        }
+      : state.mode === "i2i" && state.initImage
+        ? { init_image: state.initImage, strength: Number($("strength").value) }
+        : {}),
     loras: activeLoras(),
   };
 
@@ -246,27 +256,35 @@ export async function generate() {
     return;
   }
 
-  trackTask(data.task_id, prompt.slice(0, 40));
+  trackTask(data.task_id, (prompt || (isInpaint ? "局部重绘" : "")).slice(0, 40));
 }
 
 /* 一键重跑：沿用上次成功任务的全部参数，种子换随机 */
 async function rerunLast() {
   const last = state.lastRequest;
   if (!last) return;
+  // 修图任务：参考图与蒙版不落盘，重跑沿用画布上当前的涂抹内容
+  let inpaint = null;
+  if (last.inpaint) {
+    inpaint = getInpaintPayload();
+    if (!inpaint) { toast("修图重跑需要画布上还留着涂抹区域", true); return; }
+  }
   const body = {
     prompt: last.prompt,
     styles: (last.styles || []).map((s) => s.id),
     role: last.role ? last.role.id : null,
     common: last.common || "",
-    aspect: last.aspect_id || "1:1",
+    aspect: last.inpaint ? "auto" : (last.aspect_id || "1:1"),
     steps: last.steps || 8,
     seed: null, // 重跑：换随机种子
     batch: last.batch || 1,
     rounds: last.rounds || 1,
-    // 参考图不落盘，重绘任务沿用面板当前参考图
-    ...(last.img2img && state.initImage
-      ? { init_image: state.initImage, strength: last.strength ?? 0.6 }
-      : {}),
+    ...(inpaint
+      ? { init_image: inpaint.init_image, mask_image: inpaint.mask_image,
+          strength: last.strength ?? 0.75 }
+      : last.img2img && state.initImage
+        ? { init_image: state.initImage, strength: last.strength ?? 0.6 }
+        : {}),
     loras: activeLoras(),
   };
   try {
@@ -280,7 +298,7 @@ async function rerunLast() {
       throw new Error(friendlyApiError({ ...err, status: res.status }));
     }
     const data = await res.json();
-    trackTask(data.task_id, (last.prompt || "").slice(0, 40));
+    trackTask(data.task_id, (last.prompt || (last.inpaint ? "局部重绘" : "")).slice(0, 40));
     toast("已重新提交（新随机种子）");
   } catch (e) {
     toast(`重跑失败：${e.message}`, true);

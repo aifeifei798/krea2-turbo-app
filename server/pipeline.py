@@ -74,7 +74,8 @@ class GenRequest:
     rounds: int = 1  # 跑几轮：每轮独立管线调用（batch 张/轮），种子逐轮 +1
     common: str = ""  # 通用词：放在提示词最前（画质词等，每次生成都带）
     init_image: str | None = None  # base64 参考图（有值 = 图生图重绘）
-    strength: float = 0.6  # 重绘幅度 0-1：越大越偏离原图
+    mask_image: str | None = None  # base64 蒙版（白=重绘）：有值 = 局部重绘
+    strength: float = 0.6  # 重绘幅度 0-1：越大越偏离原图（局部重绘只作用于涂抹区）
     loras: list[tuple[str, float]] = field(default_factory=list)  # (lora_id, weight)
     created_at: float = field(default_factory=time.time)
 
@@ -349,28 +350,52 @@ def _decode_image_b64(b64: str):
     return img.convert("RGB")
 
 
+def _img_to_tensor(img) -> torch.Tensor:
+    """PIL 图 → (1,3,1,H,W)、[-1,1] 的 bf16 张量。"""
+    arr = torch.from_numpy(np.asarray(img).copy()).permute(2, 0, 1)[None, :, None]
+    return arr.to(torch.bfloat16) / 127.5 - 1.0
+
+
 def _prepare_init_tensor(img, width: int, height: int) -> torch.Tensor:
     """参考图中心裁剪到目标比例、缩放到目标尺寸（均为 16 的倍数对齐），
     返回 (1,3,1,H,W)、[-1,1] 的 bf16 张量。"""
-    import numpy as np
-
     from PIL import Image
     scale = max(width / img.width, height / img.height)
     nw, nh = round(img.width * scale), round(img.height * scale)
     img = img.resize((nw, nh), Image.LANCZOS)
     left, top = (nw - width) // 2, (nh - height) // 2
-    img = img.crop((left, top, left + width, top + height))
-    arr = torch.from_numpy(np.asarray(img).copy()).permute(2, 0, 1)[None, :, None]
-    return arr.to(torch.bfloat16) / 127.5 - 1.0
+    return _img_to_tensor(img.crop((left, top, left + width, top + height)))
+
+
+def _prepare_image_tensor(img, width: int, height: int) -> torch.Tensor:
+    """参考图直接缩放到目标尺寸（局部重绘：保持整图内容，mask 与输出逐像素对齐）。"""
+    from PIL import Image
+    return _img_to_tensor(img.resize((width, height), Image.LANCZOS))
+
+
+INPAINT_MAX_EDGE = 1536  # 修图输出最长边上限（与前端参考图压缩一致）
+
+
+def _inpaint_dims(img) -> tuple[int, int]:
+    """修图输出尺寸：按原图比例缩到最长边 ≤ INPAINT_MAX_EDGE，宽高取 16 的倍数
+    （VAE 8x × patch 2 对齐）。"""
+    scale = min(1.0, INPAINT_MAX_EDGE / max(img.width, img.height))
+    w = max(256, round(img.width * scale / 16) * 16)
+    h = max(256, round(img.height * scale / 16) * 16)
+    return w, h
 
 
 @torch.no_grad()
-def _encode_init_latents(b64: str, width: int, height: int, batch: int) -> torch.Tensor:
+def _encode_init_latents(b64: str, width: int, height: int, batch: int,
+                         crop: bool = True) -> torch.Tensor:
     """参考图 → 模型空间的初始潜变量（已 pack、未加噪）(batch, seq, ch*p*p)。
     编码约定与 QwenImage 官方管线一致：z.mode() 后 (z - mean) / std。
+    crop=True 中心裁剪（SDEdit 按所选比例）；False 直接缩放（修图跟原图）。
     必须 no_grad：否则 Wan VAE 编码的激活图全被 autograd 扣住直接 OOM。
     调用方持有 _model_lock。"""
-    x = _prepare_init_tensor(_decode_image_b64(b64), width, height).to(_pipe._execution_device)
+    src = _decode_image_b64(b64)
+    x = (_prepare_init_tensor(src, width, height) if crop
+         else _prepare_image_tensor(src, width, height)).to(_pipe._execution_device)
     vae = _pipe.vae
     z = vae.encode(x).latent_dist.mode()  # (1, z_dim, 1, h, w)，取确定性 mode
     mean = torch.tensor(vae.config.latents_mean, device=z.device, dtype=z.dtype).view(1, -1, 1, 1, 1)
@@ -382,11 +407,36 @@ def _encode_init_latents(b64: str, width: int, height: int, batch: int) -> torch
     return packed.expand(batch, -1, -1)
 
 
+def _prepare_inpaint_mask(mask_b64: str, width: int, height: int,
+                          batch: int) -> tuple[torch.Tensor, "Image.Image"]:
+    """修图蒙版（白=重绘）→（潜变量网格软 mask，像素级合成用 L 模蒙版）。
+    潜变量 mask 已 pack 成与潜变量同形状，前端画笔自带软边、缩放采样再平滑一次。
+    调用方持有 _model_lock。"""
+    import torch.nn.functional as F
+
+    from PIL import Image
+    mimg = _decode_image_b64(mask_b64).convert("L")
+    comp_mask = mimg.resize((width, height), Image.BILINEAR)  # 像素合成用（白=重绘）
+    t = torch.from_numpy(np.asarray(comp_mask).copy()).float()[None, None] / 255.0
+    lh, lw = height // _pipe.vae_scale_factor, width // _pipe.vae_scale_factor
+    ch = _pipe.transformer.config.in_channels // (_pipe.patch_size ** 2)
+    m_lat = F.interpolate(t, size=(lh, lw), mode="bilinear", align_corners=False)
+    m_lat = m_lat.repeat(1, ch, 1, 1).to(torch.bfloat16).to(_pipe._execution_device)
+    packed = _pipe._pack_latents(m_lat, 1, ch, lh, lw)
+    logger.info("inpaint mask: comp min=%.3f max=%.3f mean=%.3f | packed min=%.3f max=%.3f mean=%.3f shape=%s",
+                float(t.min()), float(t.max()), float(t.mean()),
+                float(packed.float().min()), float(packed.float().max()), float(packed.float().mean()),
+                tuple(packed.shape))
+    return packed.expand(batch, -1, -1), comp_mask
+
+
 def _img2img_schedule(steps: int, strength: float) -> tuple[list[float], int]:
-    """SDEdit 截断：按幅度跳过前段 sigma，返回 (原始线性 sigmas, 实际去噪步数)。"""
-    actual = max(1, round(steps * (1.0 - strength)))
-    raw = np.linspace(1.0, 1.0 / steps, steps)[steps - actual:].tolist()
-    return raw, actual
+    """SDEdit 截断：从约等于幅度的噪声级起步（幅度越大起始噪声越多、改动越大），
+    只跑剩下的步数；返回 (截断后 sigmas, 实际去噪步数)。
+    幅度 0.95 ≈ 从纯噪声重画（近文生图），0.05 ≈ 1 步微调。"""
+    actual = max(1, round(steps * strength))
+    full = np.linspace(1.0, 1.0 / steps, steps).tolist()
+    return full[steps - actual:], actual
 
 
 def _dynamic_shift_mu(seq_len: int) -> float:
@@ -402,10 +452,16 @@ def _dynamic_shift_mu(seq_len: int) -> float:
 # ---------------------------------------------------------------- 生成任务
 
 def _new_task(req: GenRequest) -> dict:
-    aspect = get_aspect(req.aspect_id)
-    all_loras = {l["id"]: l for l in list_loras()}
     is_i2i = bool(req.init_image)
-    # 重绘按幅度跳过前段 sigma，每轮实际去噪步数变少（进度条按真实步数计）
+    is_inpaint = bool(req.mask_image)
+    if is_inpaint:
+        # 修图：尺寸跟原图（最长边限内 16 对齐），输出与蒙版逐像素对齐
+        aw, ah = _inpaint_dims(_decode_image_b64(req.init_image))
+        aspect = {"id": "auto", "name": "跟原图", "width": aw, "height": ah}
+    else:
+        aspect = get_aspect(req.aspect_id)
+    all_loras = {l["id"]: l for l in list_loras()}
+    # 重绘按幅度截断 sigma 表（幅度越大起始噪声越多），每轮实际去噪步数变少（进度条按真实步数计）
     steps_per_round = _img2img_schedule(req.steps, req.strength)[1] if is_i2i else req.steps
     role = get_role(req.role)
     role = role if role and role["id"] == req.role else None  # 未知角色忽略
@@ -433,6 +489,7 @@ def _new_task(req: GenRequest) -> dict:
             "batch": req.batch,
             "rounds": req.rounds,
             "img2img": is_i2i,
+            "inpaint": is_inpaint,
             "strength": req.strength if is_i2i else None,
             "loras": [
                 {"id": lid, "name": all_loras[lid]["name"], "weight": weight}
@@ -471,6 +528,7 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
         "common": task["request"]["common"],
         **({"strength": task["request"]["strength"]}
            if task["request"]["img2img"] else {}),
+        **({"inpaint": True} if task["request"]["inpaint"] else {}),
         "loras": task["request"]["loras"],
         "created_at": int(time.time()),
         "model": "Krea 2 Turbo",
@@ -515,12 +573,21 @@ def _run_task(req: GenRequest) -> None:
             0, 2**31 - 1, (1,)).item()
         task["request"]["seed"] = base_seed
 
-        # SDEdit 重绘：参考图编码一次，整轮任务共用（各轮/各张只换噪声）
+        # SDEdit 重绘：参考图编码一次，整轮任务共用（各轮/各张只换噪声）。
+        # 修图（有蒙版）：尺寸跟原图直接缩放编码，另备蒙版与原图做逐步回注 + 最终像素合成
         init_latents = None
+        mask_packed = None
+        inpaint_src = None  # (原图缩放后 PIL, L 模蒙版) —— 像素级合成用
         if req.init_image:
+            width, height = task["request"]["width"], task["request"]["height"]
+            src_img = _decode_image_b64(req.init_image)
             init_latents = _encode_init_latents(
-                req.init_image, task["request"]["width"],
-                task["request"]["height"], req.batch)
+                req.init_image, width, height, req.batch, crop=not req.mask_image)
+            if req.mask_image:
+                mask_packed, comp_mask = _prepare_inpaint_mask(
+                    req.mask_image, width, height, req.batch)
+                from PIL import Image
+                inpaint_src = (src_img.resize((width, height), Image.LANCZOS), comp_mask)
 
         # 每轮独立调用管线（每轮 batch 张、独立种子 = 基种子 + 轮号），
         # 图片逐轮落盘并追加进 task，前端可边跑边看；取消时当前轮丢弃、已完成轮保留
@@ -549,6 +616,14 @@ def _run_task(req: GenRequest) -> None:
 
             def on_step(pipeline, step_index, timestep, kwargs):
                 task["step"] = round_idx * steps_this + step_index + 1
+                if mask_packed is not None:
+                    # 修图：蒙版外（mask=0）每步回注「对应噪声级的原图潜变量」，
+                    # 涂抹区（mask=1）保留模型输出真正去噪；与 QwenImageInpaintPipeline 同式
+                    nxt = step_index + 1
+                    s = raw_sigmas[nxt] if nxt < len(raw_sigmas) else 0.0
+                    kept = s * noise + (1.0 - s) * init_latents
+                    kwargs["latents"] = \
+                        mask_packed * kwargs["latents"] + (1.0 - mask_packed) * kept
                 return kwargs
 
             result = _pipe(
@@ -567,6 +642,9 @@ def _run_task(req: GenRequest) -> None:
                 task["canceled"] = True
                 break
             for i, image in enumerate(result.images):
+                if inpaint_src is not None:
+                    # 像素级兜底合成：蒙版外逐像素保持原图（VAE 往返有微小色漂，这里归零）
+                    image = Image.composite(image, inpaint_src[0], inpaint_src[1])
                 task["images"].append(
                     _save_image(image, task, seed, round_idx * req.batch + i))
         task["state"] = "done"
@@ -611,7 +689,8 @@ def enqueue(prompt: str, aspect_id: str, steps: int,
             seed: int | None, batch: int, rounds: int = 1,
             styles: list[str] | None = None, role: str | None = None,
             common: str = "",
-            init_image: str | None = None, strength: float = 0.6,
+            init_image: str | None = None, mask_image: str | None = None,
+            strength: float = 0.6,
             loras: list[tuple[str, float]] | None = None) -> str:
     req = GenRequest(
         task_id=uuid.uuid4().hex[:12],
@@ -625,6 +704,7 @@ def enqueue(prompt: str, aspect_id: str, steps: int,
         batch=batch,
         rounds=rounds,
         init_image=init_image,
+        mask_image=mask_image,
         strength=strength,
         loras=loras or [],
     )

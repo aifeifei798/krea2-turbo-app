@@ -9,11 +9,13 @@ import { bindCombos, syncComboBadge } from "./combos.js";
 import { bindModel, waitReady, renderPrecision, syncModelState } from "./model-page.js";
 import { renderLoras } from "./lora.js";
 import { loadGallery, bindGalleryScroll, bindLightbox, setRedrawHandler } from "./gallery.js";
+import { bindInpaint } from "./inpaint.js";
 
 async function init() {
   bindControls();
   bindNav();
   bindModel();
+  bindInpaint();
   bindLightbox();
   bindPicker();
   bindCommonDialog();
@@ -29,7 +31,7 @@ async function init() {
     ? savedSettings.commonWords : "";
   syncCommonBadge();
   state.aspect = savedSettings.aspect || "1:1";
-  state.mode = savedSettings.mode === "i2i" ? "i2i" : "t2i";
+  state.mode = ["i2i", "inpaint"].includes(savedSettings.mode) ? savedSettings.mode : "t2i";
   $("strength").value = savedSettings.strength ?? 0.6;
   $("strength-val").textContent = Number($("strength").value).toFixed(2);
   if (["bf16", "int8", "int4"].includes(savedSettings.precision)) {
