@@ -17,13 +17,15 @@ STYLES = [
     {"id": "poster", "name": "扁平海报", "suffix": "flat vector illustration, bold shapes, poster design, minimal palette"},
 ]
 
-# 尺寸均为 16 的倍数（VAE 8x 下采样 × patch 2 对齐）
+# 尺寸均为 16 的倍数（VAE 8x 下采样 × patch 2 对齐），总像素贴近 1024²
 ASPECTS = [
     {"id": "1:1", "name": "1:1 方形", "width": 1024, "height": 1024},
     {"id": "3:2", "name": "3:2 横幅", "width": 1216, "height": 832},
     {"id": "2:3", "name": "2:3 竖幅", "width": 832, "height": 1216},
     {"id": "16:9", "name": "16:9 宽屏", "width": 1344, "height": 768},
     {"id": "9:16", "name": "9:16 全屏", "width": 768, "height": 1344},
+    {"id": "2:1", "name": "2:1 超宽", "width": 1344, "height": 672},
+    {"id": "1:2", "name": "1:2 超长", "width": 672, "height": 1344},
 ]
 
 DEFAULT_STEPS = 8          # 蒸馏版推荐步数
