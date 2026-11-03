@@ -79,6 +79,11 @@ do_start() {
 
   if [ ! -x .venv/bin/python ]; then echo "未找到 .venv，请先按 README 创建 Python 环境" >&2; exit 1; fi
 
+  # 日志超 32MB 归档为 .old（只留一代），防止 tqdm/访问日志无限膨胀
+  if [ -f "$LOG_FILE" ] && [ "$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)" -gt $((32*1024*1024)) ]; then
+    mv "$LOG_FILE" "$LOG_FILE.old"
+  fi
+
   export KREA_PRECISION="$precision"
   nohup .venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port "$port" >> "$LOG_FILE" 2>&1 &
   pid=$!

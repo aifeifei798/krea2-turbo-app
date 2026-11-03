@@ -306,8 +306,11 @@ def _load_all_loras_locked() -> None:
 
 
 def toggle_lora(lora_id: str, on: bool) -> dict:
-    """模型页的加载/卸载开关：加载过的常驻，只有这里手动卸载。"""
-    with _model_lock:
+    """模型页的加载/卸载开关：加载过的常驻，只有这里手动卸载。
+    生成/换精度进行中（锁被占）直接 409 拒绝，不挂死请求。"""
+    if not _model_lock.acquire(timeout=2.0):
+        raise RuntimeError("模型忙（生成或换精度中），稍后再试")
+    try:
         if _pipe is None or MODEL_STATE["state"] != "ready":
             raise RuntimeError("模型未加载")
         if on and lora_id not in _loaded_adapters:
@@ -315,6 +318,8 @@ def toggle_lora(lora_id: str, on: bool) -> dict:
         elif not on and lora_id in _loaded_adapters:
             _pipe.delete_adapters([_loaded_adapters.pop(lora_id)])
             logger.info("lora unloaded: %s", lora_id)
+    finally:
+        _model_lock.release()
     return {"id": lora_id, "loaded": lora_id in _loaded_adapters}
 
 
@@ -416,6 +421,7 @@ def _new_task(req: GenRequest) -> dict:
         "total_steps": steps_per_round * req.rounds,
         "rounds": req.rounds,
         "round": 0,
+        "canceled": False,
         "error": None,
         "images": [],
         "request": {
@@ -507,8 +513,11 @@ def _run_task(req: GenRequest) -> None:
                 task["request"]["height"], req.batch)
 
         # 每轮独立调用管线（每轮 batch 张、独立种子 = 基种子 + 轮号），
-        # 图片逐轮落盘并追加进 task，前端可边跑边看
+        # 图片逐轮落盘并追加进 task，前端可边跑边看；取消时当前轮丢弃、已完成轮保留
         for round_idx in range(req.rounds):
+            if task.get("cancel"):
+                task["canceled"] = True
+                break
             seed = base_seed + round_idx
             task["round"] = round_idx + 1
 
@@ -543,6 +552,10 @@ def _run_task(req: GenRequest) -> None:
                 callback_on_step_end=on_step,
                 **extra,
             )
+            if task.get("cancel"):
+                # 取消发生在本轮跑的过程中：半成品丢弃，不落盘
+                task["canceled"] = True
+                break
             for i, image in enumerate(result.images):
                 task["images"].append(
                     _save_image(image, task, seed, round_idx * req.batch + i))
@@ -571,7 +584,9 @@ def _worker() -> None:
             task["error"] = f"模型未就绪：{MODEL_STATE.get('detail') or '未加载'}"
             task["finished_at"] = time.time()
             continue
-        _run_task(req)
+        # 整轮生成持锁：期间卸载/换精度会等生成结束，避免 _pipe 被换掉炸掉当前任务
+        with _model_lock:
+            _run_task(req)
 
 
 def start_background() -> None:
@@ -609,3 +624,17 @@ def get_task(task_id: str) -> dict | None:
     with _lock:
         task = TASKS.get(task_id)
         return json.loads(json.dumps(task)) if task else None  # 快照拷贝
+
+
+def cancel_task(task_id: str) -> bool:
+    """请求取消：排队任务轮前退出，运行中任务走管线 interrupt 提前收步。
+    当前轮未落盘的半成品丢弃，已完成轮次保留。"""
+    with _lock:
+        task = TASKS.get(task_id)
+        if not task or task["state"] not in ("queued", "running"):
+            return False
+        task["cancel"] = True
+        running = task["state"] == "running"
+    if running and _pipe is not None:
+        _pipe._interrupt = True  # diffusers 每步检查；下次 __call__ 开头自动复位
+    return True
