@@ -2,11 +2,22 @@
 
 基于 [Krea 2 Turbo](https://huggingface.co/krea/Krea-2-Turbo)（12B DiT 蒸馏文生图模型）的本地出图工作台：FastAPI 后端 + 原生 JS 前端 + Tailwind CSS v4。
 
-![工作台界面](docs/screenshot.png)
+**文生图**：风格/角色/LoRA/比例/批量全在左侧面板
+
+![文生图](docs/screenshot-t2i.png)
+
+**图生图（SDEdit）**：上传参考图，重绘幅度控制改动大小
+
+![图生图](docs/screenshot-i2i.png)
+
+**修图（局部重绘）**：画笔涂抹要改的部位（等大圆环光标），涂抹区按提示词重生成、其余逐像素保持
+
+![修图](docs/screenshot-inpaint.png)
 
 ## 特性
 
 - **8 步蒸馏出图**：`guidance_scale=0.0`，RTX 5090 上 1024² 约几秒一张
+- **界面多语言（i18n）**：右上角下拉切换 中文 / English，选择记忆在 localStorage；中文为源语言，语言包是纯 JSON（`static/lang/{code}.json`，键为中文原句）——**想加新语言：复制 `static/lang/en.json` 逐条翻译值，再在 `static/lang/index.json` 登记一行即可**，切换器自动出现该语言，无需改任何代码
 - **风格/角色预设**（历史 ComfyUI 预设迁移，`scripts/port_presets.py` 生成 `server/style_data.py`）
   - 风格 800+ 条中文名（弹窗选择：搜索中英文、分类分组、**按使用频率置顶**），可多选最多 4 个，按选择顺序嵌套 `{prompt}` 模板
   - 角色 56 条单选（多为专有人名保留原名），描述前置
