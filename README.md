@@ -98,6 +98,21 @@ scripts/gen.py "换条红围巾" --image 输入图.jpg --strength 0.75   # 图�
 scripts/gen.py "霓虹小巷" --style cinema --rounds 4 --out-dir ./out  # 批量并收集成图
 ```
 
+**MCP server（给 AI agent 用）**：`scripts/mcp_server.py`——stdio 传输，与 HTTP API 同一个 `KREA_API_KEY`（自动读 `.env`，客户端零密钥配置）。注册到 ZCode / Claude Desktop 等 MCP 客户端：
+
+```json
+{
+  "mcpServers": {
+    "krea2-turbo": {
+      "command": "<项目路径>/.venv/bin/python",
+      "args": ["<项目路径>/scripts/mcp_server.py"]
+    }
+  }
+}
+```
+
+四个工具：`generate`（文生图/图生图/局部重绘，自动等待完成并返回图片路径与完整提示词）、`list_styles`（风格 id 与中文名）、`list_images`（最近作品）、`get_status`（模型/显存/LoRA 状态）。风格参数既可用 id 也可用中文名。
+
 每张图的 meta（`outputs/*.json`）同时记录用户提示词与**拼装后的完整提示词**（通用词 + 角色 + 风格模板 + 提示词），跨工具复现不用猜。
 
 ## 结构

@@ -7,7 +7,7 @@
 - `server/` — main.py（FastAPI 路由）、pipeline.py（**门面**，重导出下方四模块；main.py 只 import 它）、state.py（共享状态：管线实例/模型状态/任务表/锁，依赖图叶子）、model.py（模型加载/卸载/精度）、lora.py（LoRA 常驻）、tasks.py（图像编码/生成 worker/任务队列）、paths.py（.env 目录配置）、presets.py（比例/风格/角色聚合+用量统计）、style_data.py 与 juese_data.py（**生成文件，勿手改**，由 scripts/port_presets.py 从外部数据转换）
 - `static/js/` — 前端 15 个 ES 模块（无打包器，`<script type="module">` 直载）
 - `static/css/` — src/app.css 为源，dist/app.css 为构建产物（gitignored）
-- `scripts/` — port_presets.py（预设数据转换）、export_quantized.py（预量化导出）、gen.py（命令行出图）、check_i18n.mjs / check_imports.mjs（静态校验，见下）
+- `scripts/` — port_presets.py（预设数据转换）、export_quantized.py（预量化导出）、gen.py（命令行出图）、mcp_server.py（MCP server，给 AI agent 用）、check_i18n.mjs / check_imports.mjs（静态校验，见下）
 - `install.sh` / `server.sh` — 安装与服务管理；`outputs/` 落盘图片+json 元数据
 
 ## 常用命令
