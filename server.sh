@@ -58,6 +58,18 @@ wait_ready() {
 
 valid_precision() { case "$1" in bf16|int8|int4) return 0 ;; *) return 1 ;; esac; }
 
+# 预检：模型目录必须已配置且为有效检查点（.env 提供，见 .env.example）
+check_model_dir() {
+  if [ -z "${KREA_MODEL_DIR:-}" ]; then
+    echo "✗ 未配置模型目录：复制 .env.example 为 .env 并设置 KREA_MODEL_DIR（见 README）" >&2
+    exit 1
+  fi
+  if [ ! -f "$KREA_MODEL_DIR/model_index.json" ]; then
+    echo "✗ KREA_MODEL_DIR 不是有效的 diffusers 模型目录（缺 model_index.json）: $KREA_MODEL_DIR" >&2
+    exit 1
+  fi
+}
+
 # ---------------------------------------------------------------- 动作
 
 do_start() {
@@ -81,6 +93,7 @@ do_start() {
 
   # .env（可选）：模型/LoRA 目录等启动配置，见 .env.example
   set -a; [ -f .env ] && . ./.env; set +a
+  check_model_dir
 
   # 日志超 32MB 归档为 .old（只留一代），防止 tqdm/访问日志无限膨胀
   if [ -f "$LOG_FILE" ] && [ "$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)" -gt $((32*1024*1024)) ]; then
@@ -158,6 +171,7 @@ do_run() {
   valid_precision "$precision" || { echo "未知精度: $precision（可选 $PRECISIONS）" >&2; exit 1; }
   [ ! -x .venv/bin/python ] && { echo "未找到 .venv，请先按 README 创建 Python 环境" >&2; exit 1; }
   set -a; [ -f .env ] && . ./.env; set +a
+  check_model_dir
   export KREA_PRECISION="$precision"
   meta_set precision "$precision"; meta_set port "$port"
   echo "▸ 前台运行 · 精度 $precision · 端口 $port（Ctrl+C 停止）"

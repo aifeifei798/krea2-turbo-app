@@ -14,7 +14,7 @@
 - **图生图重绘（SDEdit）**：「模式 → 图生图」上传参考图 + 重绘幅度 0.05–0.95——参考图按比例中心裁剪后 VAE 编码，按幅度截断 sigma 表加噪去噪（与 QwenImage 官方管线同一套 `latents_mean/std` 编码约定）；构图保留、提示词改风格/细节，批量/次数/LoRA/种子全部通用
 - **LoRA 混合**：模型加载完成后 `loras/` 目录的 LoRA **默认全部加载并常驻显存**（不随生成自动卸载），默认强度 0.4；「模型」页开关可单独卸载/重载，强度 0–2 独立调节、拖动即时生效
   - 自动兼容两种格式：diffusers PEFT 格式直载；ComfyUI/kohya 格式（`diffusion_model.` 前缀）自动把 `alpha` 标量按 `alpha/rank` 预乘进 `lora_B` 后加载
-- **模型/LoRA 目录配置**：写进 `.env`（参考 `.env.example`，server.sh 启动自动加载）——`KREA_MODEL_DIR` 基础模型目录、`KREA_LORA_DIR` LoRA 目录（缺省 `<模型目录>/loras`）、`KREA_MODELS_ROOT` 根目录；改完重启生效。LoRA 名称即目录内文件名
+- **模型/LoRA 目录配置**：写进 `.env`（首次使用从 `.env.example` 复制，**`KREA_MODEL_DIR` 必填**，代码不含任何个人路径默认值，未配置启动即报错指引）；`KREA_LORA_DIR` 可选（缺省 `<KREA_MODEL_DIR>/loras`），LoRA 名称即目录内文件名；改完重启生效
 - **模型精度可选**（「模型」页，RTX 5090 32GB 实测，量化作用于 transformer 与文本编码器）：
   | 精度 | 显存（常驻/峰值） | 512²/8 步 | 说明 |
   |---|---|---|---|
@@ -38,6 +38,7 @@
 ## 启动与管理
 
 ```bash
+cp .env.example .env       # 首次使用：配置模型目录（必填 KREA_MODEL_DIR）
 chmod +x server.sh
 
 ./server.sh start          # 后台启动（默认 int8，也可指定 bf16|int8|int4；端口默认 8420）

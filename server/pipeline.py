@@ -184,7 +184,8 @@ def load_model(precision: str) -> None:
             _pipe = _build_pipe(precision)
             gc.collect()
             _malloc_trim()
-            _load_all_loras_locked()  # LoRA 默认全量常驻（详见 _load_all_loras_locked）
+            if paths.get_lora_autoload():
+                _load_all_loras_locked()  # 默认全量常驻；KREA_LORA_AUTLOAD=0 关闭
             if precision == "bf16":
                 detail = "bf16 · offload 模式（按需进出显存）"
             else:

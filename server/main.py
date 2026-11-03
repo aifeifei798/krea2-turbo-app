@@ -81,8 +81,12 @@ def status():
 
 @app.get("/api/model")
 def model_state():
+    try:
+        model_dir = str(paths.get_model_dir())
+    except paths.ModelDirNotConfigured:
+        model_dir = None
     return {**pipeline.get_model_state(),
-            "model_dir": str(paths.get_model_dir()),
+            "model_dir": model_dir,
             "precision_hints": pipeline.get_precision_hints()}
 
 
