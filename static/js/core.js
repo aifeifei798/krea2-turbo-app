@@ -104,6 +104,17 @@ export function switchView(view) {
   }
 }
 
+/* 明暗主题切换：翻转 html[data-theme]，选择记忆在 localStorage（引导脚本在 <head> 防闪白） */
+export function bindTheme() {
+  $("theme-btn").addEventListener("click", () => {
+    const root = document.documentElement;
+    const toLight = root.dataset.theme !== "light";
+    if (toLight) root.dataset.theme = "light";
+    else delete root.dataset.theme;
+    try { localStorage.setItem("krea2-theme", toLight ? "light" : "dark"); } catch {}
+  });
+}
+
 export function bindNav() {
   document.querySelectorAll("[data-view]").forEach((btn) =>
     btn.addEventListener("click", () => switchView(btn.dataset.view)));

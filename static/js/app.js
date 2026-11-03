@@ -1,5 +1,5 @@
 /* Krea 2 Turbo 工作台前端 · 入口：装配各模块 + 启动初始化 */
-import { $, state, toast, bindNav, apiFetch } from "./core.js";
+import { $, state, toast, bindNav, bindTheme, apiFetch } from "./core.js";
 import { savedSettings } from "./settings.js";
 import { bindControls, renderPresets, renderExamples, renderMode, reuseAsRedraw, reuseAsInpaint } from "./studio.js";
 import { bindPicker } from "./picker.js";
@@ -18,6 +18,7 @@ async function init() {
   bindLangSelect();
   bindControls();
   bindNav();
+  bindTheme();
   bindModel();
   bindInpaint();
   bindLightbox();

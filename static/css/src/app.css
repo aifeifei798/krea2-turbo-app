@@ -26,6 +26,26 @@
   scrollbar-color: var(--color-border) transparent;
 }
 
+/* 苹果风亮色主题：data-theme="light" 翻转全部语义色，组件层零改动。
+   对比度底线：ink≈16:1、muted≈5.5:1、accent≈4.5:1（白底可读的深青）。 */
+[data-theme="light"] {
+  --color-paper: oklch(97.3% 0.004 250);  /* ≈ #f5f5f7 */
+  --color-ink: oklch(23% 0.01 250);       /* ≈ #1d1d1f */
+  --color-muted: oklch(46% 0.012 250);    /* ≈ #6e6e73 */
+  --color-border: oklch(89% 0.005 250);
+  --color-panel: oklch(100% 0 0);
+  --color-panel-2: oklch(95.5% 0.004 250);
+  --color-accent: oklch(47% 0.12 225);
+  --color-accent-dim: oklch(47% 0.12 225 / 0.1);
+  --color-danger: oklch(52% 0.21 25);
+  color-scheme: light;
+}
+[data-theme="light"] select { color-scheme: light; }
+
+/* 顶栏主题切换按钮：亮色显月亮（点回暗色），暗色显太阳 */
+[data-theme="light"] #theme-sun { display: none; }
+html:not([data-theme="light"]) #theme-moon { display: none; }
+
 /* range 滑块（accent 电光青，1px 描边风格） */
 input[type="range"] {
   appearance: none;
