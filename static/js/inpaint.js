@@ -297,9 +297,7 @@ export function bindInpaint() {
       syncRing();
     }));
   $("inpaint-brush").addEventListener("input", () => {
-    brushSize = Number($("inpaint-brush").value);
-    $("inpaint-brush-val").textContent = String(brushSize);
-    syncRing();
+    setBrushSize($("inpaint-brush").value);
   });
   $("inpaint-undo").addEventListener("click", () => {
     if (strokes.length) { strokes.pop(); replayOverlay(); }
@@ -332,4 +330,10 @@ export const getStrokes = () => strokes;        // 笔迹数组引用（涂完 p
 export const pushStroke = (s) => strokes.push(s);
 export const popStroke = () => strokes.pop();
 export const getBrushSize = () => brushSize;    // 主面板滑杆值（显示 px）
+export const setBrushSize = (n) => {            // 精细弹窗与主面板共用同一份笔刷大小
+  brushSize = Math.min(80, Math.max(6, Math.round(Number(n) || 28)));
+  $("inpaint-brush").value = String(brushSize);
+  $("inpaint-brush-val").textContent = String(brushSize);
+  syncRing();
+};
 export const hasBase = () => baseB64 !== null;  // 是否已载图

@@ -21,6 +21,7 @@ export function saveSettings() {
     selectedStyles: state.selectedStyles,
     role: state.selectedRole,
     commonWords: state.commonWords,
+    commonWordsPrev: state.commonWordsPrev,
     aspect: state.aspect,
     mode: state.mode,
     strength: Number($("strength").value),

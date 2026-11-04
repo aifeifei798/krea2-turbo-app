@@ -3,7 +3,7 @@
 import { $, toast } from "./core.js";
 import { t } from "./i18n.js";
 import { MASK_COLOR, drawPath, replayOverlay, getStrokes, pushStroke,
-         popStroke, getBrushSize, hasBase } from "./inpaint.js";
+         popStroke, getBrushSize, setBrushSize, hasBase } from "./inpaint.js";
 
 const fine = {
   fit: 1,        // 适应窗口的基础缩放（显示px/图像px）
@@ -115,6 +115,13 @@ function fineClose() {
   replayOverlay(); // 弹窗里的新笔迹同步回主画布
 }
 
+/* 画笔大小与主面板同一个值（滑杆里存的是 100% 缩放下的显示 px） */
+function syncFineSize() {
+  const n = getBrushSize();
+  $("fine-size").value = String(n);
+  $("fine-size-val").textContent = String(n);
+}
+
 function openFineDialog() {
   if (!hasBase()) { toast(t("先上传图片再用精细选区"), true); return; }
   const img = $("fine-base");
@@ -130,6 +137,7 @@ function openFineDialog() {
   img.src = $("inpaint-base").src;
   fine.tool = "brush";
   syncFineTools();
+  syncFineSize();
   $("fine-dialog").classList.remove("hidden");
 }
 
@@ -146,6 +154,10 @@ export function bindFine() {
     if (getStrokes().length) { popStroke(); fineReplay(); }
   });
   $("fine-fit").addEventListener("click", fineFit);
+  $("fine-size").addEventListener("input", () => {
+    setBrushSize($("fine-size").value);      // 同时更新主面板滑杆、数值与主画布笔圈
+    $("fine-size-val").textContent = String(getBrushSize());
+  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("fine-dialog").classList.contains("hidden")) fineClose();
   });

@@ -38,6 +38,8 @@ async function init() {
   state.selectedRole = savedSettings.role || null;
   state.commonWords = typeof savedSettings.commonWords === "string"
     ? savedSettings.commonWords : "";
+  state.commonWordsPrev = typeof savedSettings.commonWordsPrev === "string"
+    ? savedSettings.commonWordsPrev : "";
   syncCommonBadge();
   state.aspect = savedSettings.aspect || "1:1";
   state.mode = ["i2i", "inpaint"].includes(savedSettings.mode) ? savedSettings.mode : "t2i";

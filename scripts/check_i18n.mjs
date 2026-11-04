@@ -31,6 +31,7 @@ const variableKeys = new Set([
   "BF16 全精度",
   "全精度 · offload 模式，权重需 ~58GB 磁盘换页缓冲（RAM 紧张慎用），画质无损",
   "transformer+编码器 torchao int8 · 全 GPU 常驻 ~16.7 GiB，出图约快 3 倍",
+  "transformer fp8(W8A8) + torch.compile 融合 · 全 GPU 常驻 ~16.7 GiB，出图最快（8 步约为 int8 的 1.7 倍），首次生成需预编译内核约 1 分钟",
   "transformer+编码器 bnb nf4 · 全 GPU 常驻 ~9.9 GiB，最省显存，画质略降",
   "雨后深夜的小巷，霓虹灯牌倒映在积水路面，电影感",
   "一只柴犬坐在铺满银杏叶的台阶上，秋日午后暖光，写实摄影",

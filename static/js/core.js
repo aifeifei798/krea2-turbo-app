@@ -18,6 +18,7 @@ export const state = {
   aspect: "1:1",
   mode: "t2i", // t2i 文生图 | i2i 图生图重绘 | inpaint 修图（局部重绘）
   commonWords: "", // 通用词：每次生成放在提示词最前（画质词等）
+  commonWordsPrev: "", // 上一版通用词：弹窗里可一键写回（localStorage 持久化）
   initImage: null, // 参考图 base64（不含 data: 前缀）
   initThumb: null, // 参考图缩略 dataURL
   inpaintDims: null, // 修图原图尺寸 {width, height}（数据块显示用）

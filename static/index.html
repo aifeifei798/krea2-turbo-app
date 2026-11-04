@@ -151,15 +151,15 @@
               <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21M22 21H7M5 11l9 9"/></svg>
               <span class="hidden sm:inline" data-i18n="橡皮">橡皮</span></button>
             <button type="button" id="inpaint-undo" aria-label="撤销上一笔" data-i18n-aria="撤销上一笔"
-              class="inline-flex items-center gap-1 px-2 shrink-0">
+              class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
               <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
               <span class="hidden sm:inline" data-i18n="撤销">撤销</span></button>
             <button type="button" id="inpaint-clear" aria-label="清空全部涂抹" data-i18n-aria="清空全部涂抹"
-              class="inline-flex items-center gap-1 px-2 shrink-0">
+              class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
               <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
               <span class="hidden sm:inline" data-i18n="清空">清空</span></button>
             <button type="button" id="inpaint-fine" aria-label="打开精细选区（放大涂抹）" data-i18n-aria="打开精细选区（放大涂抹）"
-              class="inline-flex items-center gap-1 px-2 shrink-0">
+              class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
               <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>
               <span class="hidden sm:inline" data-i18n="精细">精细</span></button>
           </div>
@@ -430,11 +430,19 @@
           class="w-full bg-panel border border-border rounded-md px-3 py-2 text-sm font-mono leading-relaxed placeholder:text-muted/60 focus:border-accent"
           placeholder="masterpiece, best quality, ultra detailed"></textarea>
         <div class="flex flex-wrap gap-1.5" id="common-chips"><!-- 快捷词 JS 填充 --></div>
+        <div id="common-history" class="hidden items-center gap-2 text-xs text-muted">
+          <span class="shrink-0" data-i18n="上次">上次</span>
+          <span id="common-history-text" class="flex-1 min-w-0 font-mono truncate"></span>
+          <button id="common-restore" type="button"
+            class="shrink-0 whitespace-nowrap px-2 py-1 rounded-sm border border-border bg-panel text-xs text-muted hover:border-accent hover:text-ink transition-colors" data-i18n="写回">写回</button>
+        </div>
       </div>
       <div class="flex items-center gap-3 px-4 py-2.5 border-t border-border">
-        <span id="common-info" class="text-xs font-mono text-muted truncate"></span>
+        <span id="common-info" class="flex-1 min-w-0 text-xs font-mono text-muted truncate"></span>
+        <button id="common-clear" type="button"
+          class="shrink-0 whitespace-nowrap text-xs font-mono text-muted hover:text-ink transition-colors" data-i18n="清空">清空</button>
         <button id="common-save" type="button"
-          class="ml-auto px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="保存">保存</button>
+          class="shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="保存">保存</button>
       </div>
     </div>
   </div>
@@ -452,10 +460,10 @@
       </div>
       <div id="picker-body" class="flex-1 overflow-y-auto p-3"></div>
       <div class="flex items-center gap-3 px-4 py-2.5 border-t border-border">
-        <span id="picker-info" class="text-xs font-mono text-muted truncate"></span>
-        <button id="picker-clear" type="button" class="ml-auto text-xs font-mono text-muted hover:text-ink transition-colors" data-i18n="清空">清空</button>
+        <span id="picker-info" class="flex-1 min-w-0 text-xs font-mono text-muted truncate"></span>
+        <button id="picker-clear" type="button" class="shrink-0 whitespace-nowrap text-xs font-mono text-muted hover:text-ink transition-colors" data-i18n="清空">清空</button>
         <button id="picker-ok" type="button"
-          class="px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="确定">确定</button>
+          class="shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="确定">确定</button>
       </div>
     </div>
   </div>
@@ -531,11 +539,11 @@
           class="w-full bg-panel border border-border rounded-md px-3 py-2 text-sm font-mono placeholder:text-muted/60 focus:border-accent">
       </div>
       <div class="flex items-center gap-3 px-4 py-2.5 border-t border-border">
-        <span id="apikey-error" class="text-xs font-mono text-danger truncate"></span>
+        <span id="apikey-error" class="flex-1 min-w-0 text-xs font-mono text-danger truncate"></span>
         <button id="apikey-cancel" type="button"
-          class="ml-auto px-3 py-1.5 rounded-sm border border-border text-xs text-muted hover:text-ink hover:border-accent transition-colors" data-i18n="取消">取消</button>
+          class="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-sm border border-border text-xs text-muted hover:text-ink hover:border-accent transition-colors" data-i18n="取消">取消</button>
         <button id="apikey-save" type="button"
-          class="px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="保存">保存</button>
+          class="shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="保存">保存</button>
       </div>
     </div>
   </div>
@@ -548,6 +556,9 @@
         <span class="text-sm font-mono text-ink mr-2" data-i18n="精细选区">精细选区</span>
         <span id="fine-zoom-val" class="text-xs font-mono text-muted w-12">100%</span>
         <div class="ml-auto flex flex-wrap items-center gap-1.5">
+          <input id="fine-size" type="range" min="6" max="80" step="2" value="28" aria-label="画笔大小" data-i18n-aria="画笔大小"
+            class="w-24 md:w-32 accent-accent shrink-0">
+          <span id="fine-size-val" class="text-xs font-mono text-ink w-6 text-right shrink-0">28</span>
           <button type="button" data-fine-tool="brush" aria-label="画笔工具" data-i18n-aria="画笔工具" class="px-2 py-1 inline-flex items-center gap-1">
             <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
             <span class="hidden sm:inline" data-i18n="画笔">画笔</span></button>
@@ -557,10 +568,10 @@
           <button type="button" data-fine-tool="pan" aria-label="平移画布" data-i18n-aria="平移画布" class="px-2 py-1 inline-flex items-center gap-1">
             <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M12 2l-3 3m3-3l3 3M12 22l-3-3m3 3l3-3M2 12l3-3m-3 3l3 3M22 12l-3-3m3 3l-3 3"/></svg>
             <span class="hidden sm:inline" data-i18n="抓手">抓手</span></button>
-          <button type="button" id="fine-undo" aria-label="撤销上一笔" data-i18n-aria="撤销上一笔" class="px-2 py-1 inline-flex items-center gap-1">
+          <button type="button" id="fine-undo" aria-label="撤销上一笔" data-i18n-aria="撤销上一笔" class="px-2 py-1 inline-flex items-center gap-1 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
             <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
             <span class="hidden sm:inline" data-i18n="撤销">撤销</span></button>
-          <button type="button" id="fine-fit" aria-label="适应窗口" data-i18n-aria="适应窗口" class="px-2 py-1 inline-flex items-center gap-1">
+          <button type="button" id="fine-fit" aria-label="适应窗口" data-i18n-aria="适应窗口" class="px-2 py-1 inline-flex items-center gap-1 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
             <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3m13 5h3a2 2 0 0 0 2-2v-3"/></svg>
             <span class="hidden sm:inline" data-i18n="适应窗口">适应窗口</span></button>
           <button type="button" id="fine-done"
@@ -576,7 +587,7 @@
         </div>
         <div id="fine-ring" class="hidden"></div>
       </div>
-      <div class="px-4 py-2 border-t border-border text-xs text-muted shrink-0" data-i18n="滚轮缩放（以光标为中心）· 抓手拖动平移 · 放大后涂抹更精细，画笔大小跟随主面板滑杆">滚轮缩放（以光标为中心）· 抓手拖动平移 · 放大后涂抹更精细，画笔大小跟随主面板滑杆</div>
+      <div class="px-4 py-2 border-t border-border text-xs text-muted shrink-0" data-i18n="滚轮缩放（以光标为中心）· 抓手拖动平移 · 放大后涂抹更精细，画笔大小与主面板同步">滚轮缩放（以光标为中心）· 抓手拖动平移 · 放大后涂抹更精细，画笔大小与主面板同步</div>
     </div>
   </div>
 

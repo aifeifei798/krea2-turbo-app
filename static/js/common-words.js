@@ -29,6 +29,7 @@ function openCommonDialog() {
   $("common-text").value = state.commonWords;
   renderCommonChips();
   updateCommonInfo();
+  syncCommonHistory();
   $("common-dialog").classList.remove("hidden");
   $("common-text").focus();
 }
@@ -61,8 +62,21 @@ function updateCommonInfo() {
   $("common-info").textContent = n ? t("{n} 个词，将放在提示词最前", { n }) : t("未填写");
 }
 
+/* 上一版通用词：与当前生效值相同时没什么可写回的，直接藏起来 */
+function syncCommonHistory() {
+  const prev = (state.commonWordsPrev || "").trim();
+  const show = !!prev && prev !== (state.commonWords || "").trim();
+  $("common-history").classList.toggle("hidden", !show);
+  $("common-history").classList.toggle("flex", show);
+  if (show) $("common-history-text").textContent = prev;
+}
+
 function saveCommonWords() {
   const v = $("common-text").value.trim().replace(/[,;\s]+$/, "");
+  // 记住被替换掉的那一版（只在确实变了且非空时留存），供弹窗里一键写回
+  if (v !== state.commonWords && state.commonWords.trim()) {
+    state.commonWordsPrev = state.commonWords;
+  }
   state.commonWords = v;
   saveSettings();
   syncCommonBadge();
@@ -75,6 +89,18 @@ export function bindCommonDialog() {
   $("common-close").addEventListener("click", closeCommonDialog);
   $("common-dialog").querySelector("[data-close]").addEventListener("click", closeCommonDialog);
   $("common-save").addEventListener("click", saveCommonWords);
+  // 清空 = 清掉输入框并直接保存（走同一条保存路径：记历史、更新徽标、关窗、提示）
+  $("common-clear").addEventListener("click", () => {
+    $("common-text").value = "";
+    saveCommonWords();
+  });
+  $("common-restore").addEventListener("click", () => {
+    // 写回输入框（不直接生效），方便先看一眼或接着改，再点保存
+    $("common-text").value = state.commonWordsPrev;
+    updateCommonInfo();
+    $("common-text").focus();
+    toast(t("已写回上次的通用词，点保存生效"));
+  });
   $("common-text").addEventListener("input", updateCommonInfo);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("common-dialog").classList.contains("hidden")) {
