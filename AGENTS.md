@@ -48,7 +48,10 @@ node ~/.zcode/skills/design-forge/scripts/forge.mjs static/index.html static/js/
 - `server/style_data.py`、`juese_data.py` 是单行巨型 repr，grep 会刷屏——加文件名限定或过滤 `^server/`。
 - static/css/dist 是构建产物，手改会被覆盖；改样式只动 src 再跑构建命令。
 - `.usage.json`（风格用量）、`krea2-panel-v1`/`krea2-combos-v1`（localStorage）是运行时数据；`.env`、`.usage.json`、`.server.*`、`outputs/` 均 gitignored。
-- 预量化目录解析链：`.env` 显式（KREA_MODEL_INT8_DIR/INT4_DIR）→ 同级 `-int8/-int4` 约定 → 现场量化；显式无效自动回退。
+- 预量化目录解析链：`.env` 显式（KREA_MODEL_INT8_DIR/INT4_DIR/FP8_DIR）→ 同级 `-int8/-int4/-fp8` 约定 → 现场量化；显式无效自动回退。`paths._is_prequant` 只校验 `transformer/config.json`，文本编码器由 model.py 按组件再校验（fp8 只导 transformer，编码器复用 int8 目录）。
+- **fp8 = torchao W8A8 + `torch.compile(dynamic=True)`**：实测 1216×832 每步 766ms(int8) → 448ms(fp8)，API 端到端 7.2s → 3.9s。编译只对 fp8 开——int8 走 torchao 自定义算子，实测编译 30 分钟不收敛。`dynamic=True` 一次覆盖所有分辨率；`static` 每换一个尺寸要重编 40~60s（inductor 磁盘缓存命中后约 8s）。
+- 编译必须装在 LoRA 注入之后（PEFT 会替换子模块，先编译拿到失效引用）；LoRA「启用 ↔ 禁用」每切换一次要重编一张图，所以 fp8 的 `load_model` 会在 ready 之后起后台线程，先把「常驻但禁用」那张图编掉（模型页显示「预编译内核中」），此时进来的任务在 model_lock 上排队等。batch 1/2/4 也各是一张图（首次用到各付一次编译）。编译缓存落在 `~/.cache/torchinductor`：进程内首次约 50s，缓存命中后约 3~8s。
+- VAE 必须开 `enable_slicing()`：fp8+编译后显存更紧，batch=4 @1216×832 的解码要再挤 2.18 GiB 直接 OOM；切片按 batch 逐张解码、输出逐位等价（不是 tiling 那种近似），batch=1 无影响。
 - 根目录 AGENTS.md 与 README.md 是权威文档；改服务管理/安装流程时同步 server.sh 头部注释与 README。
 - 批量替换（python/sed）必须先断言出现次数、替换后复核——静默 no-op 会埋雷（bindTheme 就是这么从 import 里丢的，页面假死「连接中」）。
 - server.sh 头部注释是 awk 提取的帮助文本；编辑头部时替换若把行首 `#` 顶掉，该行会变成裸代码执行（曾引发调自身的 fork 炸弹）。

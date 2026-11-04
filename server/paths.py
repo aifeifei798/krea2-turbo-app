@@ -46,8 +46,10 @@ def get_lora_autoload() -> bool:
 
 
 def _is_prequant(d: Path) -> bool:
-    return (d / "transformer" / "config.json").exists() \
-        and (d / "text_encoder" / "config.json").exists()
+    """目录是否可作预量化来源：只要 transformer 就成立。
+    fp8 只导 transformer（文本编码器复用 int8 目录），所以不能强求 text_encoder 同时在；
+    各组件是否存在由调用方按组件再校验，缺了退回现场量化。"""
+    return (d / "transformer" / "config.json").exists()
 
 
 def get_quant_dir(precision: str) -> Path | None:

@@ -21,7 +21,7 @@ PID_FILE=".server.pid"
 META_FILE=".server.meta"   # 记录 precision / port 供 restart、status 使用
 LOG_FILE=".server.log"
 
-PRECISIONS="bf16|int8|int4"
+PRECISIONS="bf16|fp8|int8|int4"
 
 # ---------------------------------------------------------------- 输出工具
 
@@ -53,7 +53,7 @@ port_pid() {
   echo "$pid"
 }
 
-valid_precision() { case "$1" in bf16|int8|int4) return 0 ;; *) return 1 ;; esac; }
+valid_precision() { case "$1" in bf16|fp8|int8|int4) return 0 ;; *) return 1 ;; esac; }
 
 # 预检：API 密钥必须存在（.env 的 KREA_API_KEY）——缺失时自动生成并写回 .env
 ensure_api_key() {
@@ -112,7 +112,7 @@ do_start() {
   local precision="${1:-}" port="${2:-}" host="${3:-127.0.0.1}" pid portp
   [ -z "$precision" ] && precision=$(meta_get precision); [ -z "$precision" ] && precision=int8
   [ -z "$port" ] && port=$(meta_get port); [ -z "$port" ] && port=$PORT_DEFAULT
-  valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | int8 | int4）"; exit 1; }
+  valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | fp8 | int8 | int4）"; exit 1; }
   case "$port" in ''|*[!0-9]*) err "无效端口 \"$port\""; exit 1 ;; esac
 
   pid=$(pid_file_pid)
@@ -232,7 +232,7 @@ do_log() {
 
 do_run() {
   local precision="${1:-int8}" port="${2:-$PORT_DEFAULT}" pid
-  valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | int8 | int4）"; exit 1; }
+  valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | fp8 | int8 | int4）"; exit 1; }
   if [ ! -x .venv/bin/python ]; then
     err "未找到 .venv —— 先运行 ./install.sh 完成安装"
     exit 1
@@ -278,7 +278,7 @@ case "$CMD" in
   log)     shift; do_log "$@" ;;
   run)     shift; do_run "$@" ;;
   help|-h|--help) do_help ;;
-  bf16|int8|int4) do_run "$@" ;;
+  bf16|fp8|int8|int4) do_run "$@" ;;
   "")      do_help ;;
   *)       err "未知命令 \"$CMD\" —— 可用：start | stop | restart | status | log | run | key | lan | help"
            do_help >&2; exit 1 ;;

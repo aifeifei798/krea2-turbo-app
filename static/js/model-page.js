@@ -109,7 +109,7 @@ export function renderPrecision(hints) {
   state.precisionHints = hints || {};
   const group = $("precision-group");
   group.innerHTML = "";
-  [["bf16", "BF16 全精度"], ["int8", "INT8 8bit"], ["int4", "INT4 4bit"]].forEach(([id, label]) => {
+  [["bf16", "BF16 全精度"], ["fp8", "FP8 8bit"], ["int8", "INT8 8bit"], ["int4", "INT4 4bit"]].forEach(([id, label]) => {
     label = t(label);
     const b = document.createElement("button");
     b.type = "button";

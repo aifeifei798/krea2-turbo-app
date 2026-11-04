@@ -43,7 +43,7 @@ async function init() {
   state.mode = ["i2i", "inpaint"].includes(savedSettings.mode) ? savedSettings.mode : "t2i";
   $("strength").value = savedSettings.strength ?? 0.6;
   $("strength-val").textContent = Number($("strength").value).toFixed(2);
-  if (["bf16", "int8", "int4"].includes(savedSettings.precision)) {
+  if (["bf16", "fp8", "int8", "int4"].includes(savedSettings.precision)) {
     state.selectedPrecision = savedSettings.precision;
   }
   renderMode();
