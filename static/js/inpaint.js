@@ -110,6 +110,32 @@ function drawSegment(ctx, from, to, size, erase) {
   ctx.restore();
 }
 
+/* 把一条笔迹画到 ctx 上：brush = 圆头描边，lasso = 闭合多边形填充。
+   预览层、蒙版导出、精细弹窗三处共用，避免三份各画一套。 */
+export function paintStroke(ctx, s, color) {
+  ctx.save();
+  if (s.erase) ctx.globalCompositeOperation = "destination-out";
+  if (s.kind === "lasso") {
+    const pts = s.points;
+    if (pts.length < 3) { ctx.restore(); return; }
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = s.size;
+    ctx.beginPath();
+    drawPath(ctx, s.points);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /* 按笔迹列表重铺整个预览层（载图/撤销/清空后；精细弹窗关闭时也经此同步） */
 export function replayOverlay() {
   const c = $("inpaint-canvas");
@@ -118,18 +144,7 @@ export function replayOverlay() {
   c.width = img.naturalWidth;
   c.height = img.naturalHeight;
   const ctx = c.getContext("2d");
-  for (const s of strokes) {
-    ctx.save();
-    if (s.erase) ctx.globalCompositeOperation = "destination-out";
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = MASK_COLOR;
-    ctx.lineWidth = s.size;
-    ctx.beginPath();
-    drawPath(ctx, s.points);
-    ctx.stroke();
-    ctx.restore();
-  }
+  for (const s of strokes) paintStroke(ctx, s, MASK_COLOR);
 }
 
 /* 导出蒙版：黑底白笔迹，整体轻微羽化（后端软合成 + 潜变量重注入共用） */
@@ -143,18 +158,7 @@ function exportMask() {
   const hctx = hard.getContext("2d");
   hctx.fillStyle = "#000";
   hctx.fillRect(0, 0, w, h);
-  hctx.lineCap = "round";
-  hctx.lineJoin = "round";
-  hctx.strokeStyle = "#fff";
-  for (const s of strokes) {
-    hctx.save();
-    if (s.erase) hctx.globalCompositeOperation = "destination-out";
-    hctx.lineWidth = s.size;
-    hctx.beginPath();
-    drawPath(hctx, s.points);
-    hctx.stroke();
-    hctx.restore();
-  }
+  for (const s of strokes) paintStroke(hctx, s, "#fff");
   const out = document.createElement("canvas");
   out.width = w;
   out.height = h;
@@ -181,15 +185,18 @@ function ensureRing() {
   return ring;
 }
 
-/* 圆环尺寸/样式随画笔大小与工具变化（橡皮=虚线圈） */
+/* 圆环尺寸/样式随画笔大小与工具变化（橡皮=虚线圈；套索改用十字光标） */
 function syncRing() {
   const r = ensureRing();
   r.style.width = `${brushSize}px`;
   r.style.height = `${brushSize}px`;
   r.style.borderStyle = tool === "eraser" ? "dashed" : "solid";
+  r.style.display = tool === "lasso" ? "none" : "block";
+  $("inpaint-canvas").style.cursor = tool === "lasso" ? "crosshair" : "none";
 }
 
 function moveRing(e) {
+  if (tool === "lasso") return; // 套索没有"笔刷大小"，用十字光标
   const c = $("inpaint-canvas");
   const rect = c.getBoundingClientRect();
   const x = e.clientX - rect.left;
@@ -218,11 +225,40 @@ function toImagePoint(e) {
   };
 }
 
+/* 套索进行中：先重铺已提交笔迹，再叠一层虚线轮廓 + 半透明填充（松手才落成实心） */
+function drawLassoLive() {
+  replayOverlay();
+  const c = $("inpaint-canvas");
+  const ctx = c.getContext("2d");
+  const pts = cur.points;
+  const width = Math.max(2, Math.round(c.width / 400));
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  if (pts.length > 2) {
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255, 60, 60, 0.18)";
+    ctx.fill();
+  }
+  ctx.setLineDash([width * 3, width * 2]);
+  ctx.lineWidth = width;
+  ctx.strokeStyle = MASK_COLOR;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function startStroke(e) {
   if (!baseB64) return;
   e.preventDefault();
   try { $("inpaint-canvas").setPointerCapture(e.pointerId); } catch { /* 指针已失效则不捕获 */ }
   const p = toImagePoint(e);
+  if (tool === "lasso") {
+    cur = { kind: "lasso", points: [{ x: p.x, y: p.y }] }; // 松手时自动闭合
+    hideRing();
+    drawLassoLive();
+    return;
+  }
   cur = { points: [p], size: p.size, erase: tool === "eraser" };
   drawSegment($("inpaint-canvas").getContext("2d"), p, p, cur.size, cur.erase);
 }
@@ -231,6 +267,13 @@ function moveStroke(e) {
   if (!cur) return;
   e.preventDefault();
   const p = toImagePoint(e);
+  if (cur.kind === "lasso") {
+    const last = cur.points[cur.points.length - 1];
+    if (Math.hypot(p.x - last.x, p.y - last.y) < 2) return; // 去抖：少铺几遍全图
+    cur.points.push({ x: p.x, y: p.y });
+    drawLassoLive();
+    return;
+  }
   const last = cur.points[cur.points.length - 1];
   cur.points.push(p);
   drawSegment($("inpaint-canvas").getContext("2d"), last, p, cur.size, cur.erase);
@@ -238,8 +281,11 @@ function moveStroke(e) {
 
 function endStroke() {
   if (!cur) return;
-  strokes.push(cur);
+  const wasLasso = cur.kind === "lasso";
+  const tooSmall = wasLasso && cur.points.length < 3; // 一次点击/抖动不足，不成圈就丢掉
+  if (!tooSmall) strokes.push(cur);
   cur = null;
+  if (wasLasso) replayOverlay(); // 把预览的虚线换成实心填充
   saveSettings();
 }
 

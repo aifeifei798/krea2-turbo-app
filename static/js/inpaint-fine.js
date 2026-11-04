@@ -2,8 +2,8 @@
    笔迹与主画布共享（图像像素坐标，经 inpaint.js 的访问器读写）；由 app.js 装配 bindFine。 */
 import { $, toast } from "./core.js";
 import { t } from "./i18n.js";
-import { MASK_COLOR, drawPath, replayOverlay, getStrokes, pushStroke,
-         popStroke, getBrushSize, setBrushSize, hasBase } from "./inpaint.js";
+import { MASK_COLOR, replayOverlay, getStrokes, pushStroke,
+         popStroke, getBrushSize, setBrushSize, paintStroke, hasBase } from "./inpaint.js";
 
 const fine = {
   fit: 1,        // 适应窗口的基础缩放（显示px/图像px）
@@ -41,18 +41,7 @@ function fineReplay() {
   const c = $("fine-canvas");
   const ctx = c.getContext("2d");
   ctx.clearRect(0, 0, c.width, c.height);
-  for (const s of getStrokes()) {
-    ctx.save();
-    if (s.erase) ctx.globalCompositeOperation = "destination-out";
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = MASK_COLOR;
-    ctx.lineWidth = s.size;
-    ctx.beginPath();
-    drawPath(ctx, s.points);
-    ctx.stroke();
-    ctx.restore();
-  }
+  for (const s of getStrokes()) paintStroke(ctx, s, MASK_COLOR);
 }
 
 /* 客户端坐标 → 图像像素（含平移与缩放） */
