@@ -3,7 +3,10 @@
 import { $, toast } from "./core.js";
 import { t } from "./i18n.js";
 import { MASK_COLOR, replayOverlay, getStrokes, pushStroke,
-         popStroke, getBrushSize, setBrushSize, paintStroke, hasBase } from "./inpaint.js";
+         popStroke, getBrushSize, setBrushSize, paintStroke, maskLayer,
+         hasBase } from "./inpaint.js";
+
+const fineLayer = maskLayer();
 
 const fine = {
   fit: 1,        // 适应窗口的基础缩放（显示px/图像px）
@@ -39,9 +42,9 @@ function fineFit() {
 
 function fineReplay() {
   const c = $("fine-canvas");
-  const ctx = c.getContext("2d");
-  ctx.clearRect(0, 0, c.width, c.height);
-  for (const s of getStrokes()) paintStroke(ctx, s, MASK_COLOR);
+  const lctx = fineLayer.ctx(c.width, c.height, true);
+  for (const s of getStrokes()) paintStroke(lctx, s, MASK_COLOR);
+  fineLayer.blit(c.getContext("2d"), c.width, c.height);
 }
 
 /* 客户端坐标 → 图像像素（含平移与缩放） */
@@ -82,18 +85,21 @@ function fineRingMove(e) {
   fineRingEl.classList.remove("hidden");
 }
 
-function fineSegment(ctx, from, to, size, erase) {
-  ctx.save();
-  if (erase) ctx.globalCompositeOperation = "destination-out";
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = MASK_COLOR;
-  ctx.lineWidth = size;
-  ctx.beginPath();
-  ctx.moveTo(from.x, from.y);
-  ctx.lineTo(to.x + 0.01, to.y + 0.01);
-  ctx.stroke();
-  ctx.restore();
+function fineSegment(from, to, size, erase) {
+  const c = $("fine-canvas");
+  const lctx = fineLayer.ctx(c.width, c.height);
+  lctx.save();
+  if (erase) lctx.globalCompositeOperation = "destination-out";
+  lctx.lineCap = "round";
+  lctx.lineJoin = "round";
+  lctx.strokeStyle = MASK_COLOR;
+  lctx.lineWidth = size;
+  lctx.beginPath();
+  lctx.moveTo(from.x, from.y);
+  lctx.lineTo(to.x + 0.01, to.y + 0.01);
+  lctx.stroke();
+  lctx.restore();
+  fineLayer.blit(c.getContext("2d"), c.width, c.height);
 }
 
 function fineClose() {
@@ -181,7 +187,7 @@ export function bindFine() {
     // 画笔大小 = 主面板滑杆值（弹窗屏幕像素）；放大后覆盖的图像像素更少、涂抹更精细
     const size = Math.max(2, Math.round(getBrushSize() / fine.eff));
     fine.stroke = { points: [p], size, erase: fine.tool === "eraser" };
-    fineSegment($("fine-canvas").getContext("2d"), p, p, size, fine.stroke.erase);
+    fineSegment(p, p, size, fine.stroke.erase);
   });
   stage.addEventListener("pointermove", (e) => {
     if (e.pointerType === "touch") { if (fineRingEl) fineRingEl.classList.add("hidden"); return; }
@@ -196,8 +202,7 @@ export function bindFine() {
       const p = fineToImage(e);
       const last = fine.stroke.points[fine.stroke.points.length - 1];
       fine.stroke.points.push(p);
-      fineSegment($("fine-canvas").getContext("2d"), last, p,
-                  fine.stroke.size, fine.stroke.erase);
+      fineSegment(last, p, fine.stroke.size, fine.stroke.erase);
     }
   });
   const fineEnd = () => {

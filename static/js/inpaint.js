@@ -5,7 +5,35 @@ import { t } from "./i18n.js";
 import { savedSettings, saveSettings } from "./settings.js";
 
 const MAX_EDGE = 1536; // 原图压缩上限（与图生图一致；服务端同值兜底）
-export const MASK_COLOR = "rgba(255, 60, 60, 0.55)"; // 涂抹预览色（inpaint-fine.js 共用）
+/* 蒙版预览固有色：画在不透明离屏层上，再整体半透明合成 —— 叠几遍都不会加深，
+   这样"看到的红色深浅"永远等于"真实蒙版覆盖"（导出的蒙版本身是实心 255） */
+export const MASK_COLOR = "#ff3b3b";
+const MASK_ALPHA = 0.7;
+
+/* 离屏蒙版层：ctx(w,h,clear) 取上下文（尺寸变了自动重建）；blit 半透明贴回显示画布 */
+export function maskLayer() {
+  let canvas = null;
+  return {
+    ctx(w, h, clear = false) {
+      if (!canvas) canvas = document.createElement("canvas");
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      const c = canvas.getContext("2d");
+      if (clear) c.clearRect(0, 0, w, h);
+      return c;
+    },
+    blit(target, w, h) {
+      if (!canvas) return;
+      target.clearRect(0, 0, w, h);
+      target.save();
+      target.globalAlpha = MASK_ALPHA;
+      target.drawImage(canvas, 0, 0);
+      target.restore();
+    },
+  };
+}
 
 let baseB64 = null; // 压缩后的原图 base64（不含 data: 前缀）
 let strokes = []; // {points:[{x,y}], size(图像px), erase} —— 图像像素坐标
@@ -96,18 +124,24 @@ export function drawPath(ctx, points) {
   for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
 }
 
-function drawSegment(ctx, from, to, size, erase) {
-  ctx.save();
-  if (erase) ctx.globalCompositeOperation = "destination-out";
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = MASK_COLOR;
-  ctx.lineWidth = size;
-  ctx.beginPath();
-  ctx.moveTo(from.x, from.y);
-  ctx.lineTo(to.x + 0.01, to.y + 0.01);
-  ctx.stroke();
-  ctx.restore();
+const previewLayer = maskLayer();
+
+function drawSegment(from, to, size, erase) {
+  const c = $("inpaint-canvas");
+  if (!c.width) return;
+  const lctx = previewLayer.ctx(c.width, c.height);
+  lctx.save();
+  if (erase) lctx.globalCompositeOperation = "destination-out";
+  lctx.lineCap = "round";
+  lctx.lineJoin = "round";
+  lctx.strokeStyle = MASK_COLOR;
+  lctx.lineWidth = size;
+  lctx.beginPath();
+  lctx.moveTo(from.x, from.y);
+  lctx.lineTo(to.x + 0.01, to.y + 0.01);
+  lctx.stroke();
+  lctx.restore();
+  previewLayer.blit(c.getContext("2d"), c.width, c.height);
 }
 
 /* 把一条笔迹画到 ctx 上：brush = 圆头描边，lasso = 闭合多边形填充。
@@ -143,8 +177,9 @@ export function replayOverlay() {
   if (!img.naturalWidth) return;
   c.width = img.naturalWidth;
   c.height = img.naturalHeight;
-  const ctx = c.getContext("2d");
-  for (const s of strokes) paintStroke(ctx, s, MASK_COLOR);
+  const lctx = previewLayer.ctx(c.width, c.height, true);
+  for (const s of strokes) paintStroke(lctx, s, MASK_COLOR);
+  previewLayer.blit(c.getContext("2d"), c.width, c.height);
 }
 
 /* 导出蒙版：黑底白笔迹，整体轻微羽化（后端软合成 + 潜变量重注入共用） */
@@ -260,7 +295,7 @@ function startStroke(e) {
     return;
   }
   cur = { points: [p], size: p.size, erase: tool === "eraser" };
-  drawSegment($("inpaint-canvas").getContext("2d"), p, p, cur.size, cur.erase);
+  drawSegment(p, p, cur.size, cur.erase);
 }
 
 function moveStroke(e) {
@@ -276,7 +311,7 @@ function moveStroke(e) {
   }
   const last = cur.points[cur.points.length - 1];
   cur.points.push(p);
-  drawSegment($("inpaint-canvas").getContext("2d"), last, p, cur.size, cur.erase);
+  drawSegment(last, p, cur.size, cur.erase);
 }
 
 function endStroke() {
