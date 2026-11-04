@@ -175,10 +175,12 @@ def generate(body: GenerateIn):
             raise HTTPException(400, f"未知风格: {sid}")
     if body.role and get_role(body.role) is None:
         raise HTTPException(400, f"未知角色: {body.role}")
-    # 参考图必须是可解码的有效图片
+    # 参考图必须是可解码的有效图片（只读文件头，不整图解码：4K 图 14ms vs 96ms）
     if body.init_image is not None:
         try:
-            pipeline._decode_image_b64(body.init_image)
+            pipeline._image_size_b64(body.init_image)
+        except pipeline.ImageLimitError as exc:
+            raise HTTPException(400, str(exc)) from None
         except Exception:  # noqa: BLE001 - 解码失败统一回 400
             raise HTTPException(400, "参考图不是有效的图片数据") from None
     # 蒙版：必须伴随参考图，且自身可解码
@@ -186,7 +188,9 @@ def generate(body: GenerateIn):
         if body.init_image is None:
             raise HTTPException(400, "局部重绘需要同时提供原图与蒙版")
         try:
-            pipeline._decode_image_b64(body.mask_image)
+            pipeline._image_size_b64(body.mask_image)
+        except pipeline.ImageLimitError as exc:
+            raise HTTPException(400, str(exc)) from None
         except Exception:  # noqa: BLE001 - 解码失败统一回 400
             raise HTTPException(400, "蒙版不是有效的图片数据") from None
     source_id = body.source_id

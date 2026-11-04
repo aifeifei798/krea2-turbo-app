@@ -27,64 +27,97 @@ OUTPUT_DIR = BASE_DIR / "outputs"
 
 # ---------------------------------------------------------------- 图像编码（SDEdit / 修图）
 
-def _decode_image_b64(b64: str):
-    """接受裸 base64 或 data URL，返回 RGB PIL Image；非法输入抛异常。"""
+MAX_IMAGE_B64 = 32 * 2**20   # 参考图/蒙版 base64 上限（前端压缩后最长边 1536，实测远低于此）
+MAX_IMAGE_PIXELS = 40_000_000  # 解码后像素上限，拦住解压炸弹（40MP ≈ 7680×5200）
+
+
+class ImageLimitError(ValueError):
+    """图片超出体积/分辨率上限（消息可直接回给前端，与「不是有效图片」区分开）"""
+
+
+def _open_image_b64(b64: str):
+    """base64/data URL → 惰性 PIL Image（只解析文件头），并做体积/像素上限检查。
+    非法输入抛异常。调用方要像素数据时再 convert()/load()。"""
     import base64
     import io
 
     from PIL import Image
     if b64.startswith("data:"):
         b64 = b64.split(",", 1)[-1]
+    if len(b64) > MAX_IMAGE_B64:
+        raise ImageLimitError(f"图片数据过大：{len(b64) / 2**20:.1f} MB"
+                              f"（上限 {MAX_IMAGE_B64 // 2**20} MB）")
     img = Image.open(io.BytesIO(base64.b64decode(b64, validate=True)))
-    return img.convert("RGB")
+    if img.width * img.height > MAX_IMAGE_PIXELS:
+        raise ImageLimitError(f"图片分辨率过大：{img.width}×{img.height}")
+    return img
+
+
+def _decode_image_b64(b64: str):
+    """接受裸 base64 或 data URL，返回 RGB PIL Image；非法输入抛异常。"""
+    return _open_image_b64(b64).convert("RGB")
+
+
+def _image_size_b64(b64: str) -> tuple[int, int]:
+    """只读文件头拿尺寸：4K 图约 14ms，比完整解码（约 96ms）省 7 倍。
+    校验请求体是否为合法图片时用它，别为了拿尺寸把像素解开。"""
+    return _open_image_b64(b64).size
 
 
 def _img_to_tensor(img) -> torch.Tensor:
-    """PIL 图 → (1,3,1,H,W)、[-1,1] 的 bf16 张量。"""
+    """PIL 图 → (1,3,1,H,W)、[-1,1] 的 bf16 张量。
+    .copy() 不是白费的：np.asarray(PIL) 拿到的是只读视图，torch.from_numpy 会告警；
+    这次拷贝实测约 0.03ms，换掉每次出图的告警刷屏很划算。"""
     arr = torch.from_numpy(np.asarray(img).copy()).permute(2, 0, 1)[None, :, None]
     return arr.to(torch.bfloat16) / 127.5 - 1.0
 
 
 def _prepare_init_tensor(img, width: int, height: int) -> torch.Tensor:
     """参考图中心裁剪到目标比例、缩放到目标尺寸（均为 16 的倍数对齐），
-    返回 (1,3,1,H,W)、[-1,1] 的 bf16 张量。"""
+    返回 (1,3,1,H,W)、[-1,1] 的 bf16 张量。
+    VAE 输入端用 BICUBIC：4K→1024 实测 45ms（LANCZOS 69ms），
+    图生图后面还要加噪再编码，这 24ms 的插值质量差异在像素上不可见。"""
     from PIL import Image
     scale = max(width / img.width, height / img.height)
     nw, nh = round(img.width * scale), round(img.height * scale)
-    img = img.resize((nw, nh), Image.LANCZOS)
+    img = img.resize((nw, nh), Image.Resampling.BICUBIC)
     left, top = (nw - width) // 2, (nh - height) // 2
     return _img_to_tensor(img.crop((left, top, left + width, top + height)))
 
 
 def _prepare_image_tensor(img, width: int, height: int) -> torch.Tensor:
-    """参考图直接缩放到目标尺寸（局部重绘：保持整图内容，mask 与输出逐像素对齐）。"""
+    """参考图直接缩放到目标尺寸（局部重绘：保持整图内容，mask 与输出逐像素对齐）。
+    同样只喂 VAE，用 BICUBIC。注意输出图里蒙版外的像素来自外层单独用
+    LANCZOS 缩放的原图，所以这里降级不影响成品锐度。"""
     from PIL import Image
-    return _img_to_tensor(img.resize((width, height), Image.LANCZOS))
+    return _img_to_tensor(img.resize((width, height), Image.Resampling.BICUBIC))
 
 
 INPAINT_MAX_EDGE = 1536  # 修图输出最长边上限（与前端参考图压缩一致）
 
 
-def _inpaint_dims(img) -> tuple[int, int]:
+def _inpaint_dims(size: tuple[int, int]) -> tuple[int, int]:
     """修图输出尺寸：按原图比例缩到最长边 ≤ INPAINT_MAX_EDGE，宽高取 16 的倍数
-    （VAE 8x × patch 2 对齐）。"""
-    scale = min(1.0, INPAINT_MAX_EDGE / max(img.width, img.height))
-    w = max(256, round(img.width * scale / 16) * 16)
-    h = max(256, round(img.height * scale / 16) * 16)
+    （VAE 8x × patch 2 对齐）。只收尺寸，避免为了算尺寸把整张图解回来。"""
+    w0, h0 = size
+    scale = min(1.0, INPAINT_MAX_EDGE / max(w0, h0))
+    w = max(256, round(w0 * scale / 16) * 16)
+    h = max(256, round(h0 * scale / 16) * 16)
     return w, h
 
 
 @torch.no_grad()
-def _encode_init_latents(b64: str, width: int, height: int, batch: int,
+def _encode_init_latents(img, width: int, height: int, batch: int,
                          crop: bool = True) -> torch.Tensor:
-    """参考图 → 模型空间的初始潜变量（已 pack、未加噪）(batch, seq, ch*p*p)。
-    编码约定与 QwenImage 官方管线一致：z.mode() 后 (z - mean) / std。
+    """参考图（已解码的 RGB PIL 图）→ 模型空间的初始潜变量（已 pack、未加噪）
+    (batch, seq, ch*p*p)。编码约定与 QwenImage 官方管线一致：z.mode() 后 (z - mean) / std。
     crop=True 中心裁剪（SDEdit 按所选比例）；False 直接缩放（修图跟原图）。
+    收 PIL 图而不是 base64：同一张 4K 图完整解码约 96ms，原先一个任务要解 3~4 遍
+    （接口校验、探尺寸、编码前各来一次），白烧 300ms CPU，其中一遍还压在 TASKS 锁里。
     必须 no_grad：否则 Wan VAE 编码的激活图全被 autograd 扣住直接 OOM。
     调用方持有 model_lock。"""
-    src = _decode_image_b64(b64)
-    x = (_prepare_init_tensor(src, width, height) if crop
-         else _prepare_image_tensor(src, width, height)).to(state.pipe._execution_device)
+    x = (_prepare_init_tensor(img, width, height) if crop
+         else _prepare_image_tensor(img, width, height)).to(state.pipe._execution_device)
     vae = state.pipe.vae
     z = vae.encode(x).latent_dist.mode()  # (1, z_dim, 1, h, w)，取确定性 mode
     mean = torch.tensor(vae.config.latents_mean, device=z.device, dtype=z.dtype).view(1, -1, 1, 1, 1)
@@ -104,7 +137,7 @@ def _prepare_inpaint_mask(mask_b64: str, width: int, height: int,
     import torch.nn.functional as F
 
     from PIL import Image
-    mimg = _decode_image_b64(mask_b64).convert("L")
+    mimg = _open_image_b64(mask_b64).convert("L")  # 直接转灰度，省一次 RGB 中间图
     comp_mask = mimg.resize((width, height), Image.BILINEAR)  # 像素合成用（白=重绘）
     t = torch.from_numpy(np.asarray(comp_mask).copy()).float()[None, None] / 255.0
     lh, lw = height // state.pipe.vae_scale_factor, width // state.pipe.vae_scale_factor
@@ -145,7 +178,7 @@ def _new_task(req: state.GenRequest) -> dict:
     is_inpaint = bool(req.mask_image)
     if is_inpaint:
         # 修图：尺寸跟原图（最长边限内 16 对齐），输出与蒙版逐像素对齐
-        aw, ah = _inpaint_dims(_decode_image_b64(req.init_image))
+        aw, ah = _inpaint_dims(_image_size_b64(req.init_image))
         aspect = {"id": "auto", "name": "跟原图", "width": aw, "height": ah}
     else:
         aspect = get_aspect(req.aspect_id)
@@ -211,10 +244,21 @@ def _bake_exif_params(image, jpg_path: Path, meta: dict) -> None:
         image.save(jpg_path, quality=95)
 
 
+def _alloc_stem(task: dict, seed: int, index: int) -> str:
+    """生成唯一文件名主干。并发/连点+固定种子时，同一秒内 (seed, index) 可能撞车，
+    撞了就直接覆盖上一张图，所以存在即加后缀。单个 worker 串行落盘，这里是竞态安全的。"""
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    base = f"{ts}_{seed}_{index}" if task["request"]["batch"] > 1 else f"{ts}_{seed}"
+    stem, n = base, 1
+    while (OUTPUT_DIR / f"{stem}.jpg").exists() or (OUTPUT_DIR / f"{stem}.json").exists():
+        n += 1
+        stem = f"{base}_{n}"
+    return stem
+
+
 def _save_image(image, task: dict, seed: int, index: int) -> dict:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    stem = f"{ts}_{seed}_{index}" if task["request"]["batch"] > 1 else f"{ts}_{seed}"
+    stem = _alloc_stem(task, seed, index)
     jpg_path = OUTPUT_DIR / f"{stem}.jpg"
 
     meta = {
@@ -291,15 +335,20 @@ def _run_task(req: state.GenRequest) -> None:
         # 修图（有蒙版）：尺寸跟原图直接缩放编码，另备蒙版与原图做逐步回注 + 最终像素合成
         init_latents = None
         mask_packed = None
+        inv_mask_packed = None
         inpaint_src = None  # (原图缩放后 PIL, L 模蒙版) —— 像素级合成用
         if req.init_image:
             width, height = task["request"]["width"], task["request"]["height"]
-            src_img = _decode_image_b64(req.init_image)
+            src_img = _decode_image_b64(req.init_image)  # 整个任务只解这一次
             init_latents = _encode_init_latents(
-                req.init_image, width, height, req.batch, crop=not req.mask_image)
+                src_img, width, height, req.batch, crop=not req.mask_image)
             if req.mask_image:
                 mask_packed, comp_mask = _prepare_inpaint_mask(
                     req.mask_image, width, height, req.batch)
+                # 反蒙版每步都要用，先算好一次；1.0 - mask 在 bf16 下逐步重算结果一致，
+                # 只是白烧一次全潜变量的减法与分配
+                inv_mask_packed = 1.0 - mask_packed
+                # 合成源用 LANCZOS：蒙版外的像素就是成品像素，这里的锐度不能降级
                 inpaint_src = (src_img.resize((width, height), Image.LANCZOS), comp_mask)
 
         # 每轮独立调用管线（每轮 batch 张、独立种子 = 基种子 + 轮号），
@@ -336,7 +385,7 @@ def _run_task(req: state.GenRequest) -> None:
                     s = raw_sigmas[nxt] if nxt < len(raw_sigmas) else 0.0
                     kept = s * noise + (1.0 - s) * init_latents
                     kwargs["latents"] = \
-                        mask_packed * kwargs["latents"] + (1.0 - mask_packed) * kept
+                        mask_packed * kwargs["latents"] + inv_mask_packed * kept
                 return kwargs
 
             result = state.pipe(
@@ -422,8 +471,11 @@ def enqueue(prompt: str, aspect_id: str, steps: int,
         source_id=source_id,
         loras=loras or [],
     )
+    # 任务快照（含修图探尺寸的解码）在锁外组装：这一步是几十毫秒的 CPU 活儿，
+    # 压进 state.lock 会拖住所有 /api/tasks 轮询，正是前端「卡一下」的来源
+    task = _new_task(req)
     with state.lock:
-        state.TASKS[req.task_id] = _new_task(req)
+        state.TASKS[req.task_id] = task
         state.prune_tasks()
     state.gen_queue.put(req)
     return req.task_id

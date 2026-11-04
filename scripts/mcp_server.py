@@ -65,11 +65,29 @@ def api(path: str, payload: dict | None = None, timeout: int = 30) -> dict:
         raise RuntimeError(f"HTTP {e.code}: {detail or e.reason}") from None
 
 
+MCP_B64_SOFT_MAX = 24 * 2**20  # 超过这个体积先缩图再传（服务端硬上限 32 MB）
+
+
 def _read_image_b64(path: str) -> str:
+    """本地图 → base64。超大原图（几十 MB 的手机原图/PNG 导出）先缩到最长边 1536
+    再转 JPEG，与网页端参考图压缩一致，免得撞服务端体积上限。"""
     p = Path(path)
     if not p.exists():
         raise RuntimeError(f"图片不存在: {p}")
-    return base64.b64encode(p.read_bytes()).decode()
+    raw = p.read_bytes()
+    b64 = base64.b64encode(raw).decode()
+    if len(b64) <= MCP_B64_SOFT_MAX:
+        return b64
+
+    import io
+
+    from PIL import Image
+    with Image.open(p) as img:
+        img = img.convert("RGB")
+        img.thumbnail((1536, 1536), Image.Resampling.BICUBIC)
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=92)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _resolve_style_token(token: str, styles: list[dict]) -> str | None:
