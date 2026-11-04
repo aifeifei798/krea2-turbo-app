@@ -281,6 +281,10 @@ def delete_image(image_id: str):
         if p.exists():
             p.unlink()
             removed = True
+    src = OUTPUT_DIR / "src" / f"{image_id}.jpg"  # 前后对比的原图一并清理
+    if src.exists():
+        src.unlink()
+        removed = True
     if not removed:
         raise HTTPException(404, "图片不存在")
     return {"ok": True}

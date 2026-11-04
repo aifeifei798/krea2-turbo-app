@@ -72,25 +72,26 @@ def _img_to_tensor(img) -> torch.Tensor:
     return arr.to(torch.bfloat16) / 127.5 - 1.0
 
 
-def _prepare_init_tensor(img, width: int, height: int) -> torch.Tensor:
-    """参考图中心裁剪到目标比例、缩放到目标尺寸（均为 16 的倍数对齐），
-    返回 (1,3,1,H,W)、[-1,1] 的 bf16 张量。
-    VAE 输入端用 BICUBIC：4K→1024 实测 45ms（LANCZOS 69ms），
+def _prepare_init_pil(img, width: int, height: int, crop: bool = True):
+    """参考图预处理成与输出同尺寸的 PIL 图：crop=True 中心裁剪到目标比例再缩放
+    （SDEdit 按所选比例），False 直接缩放（修图保持整图内容，mask 与输出逐像素对齐）。
+    尺寸均为 16 的倍数对齐。VAE 输入端用 BICUBIC：4K→1024 实测 45ms（LANCZOS 69ms），
     图生图后面还要加噪再编码，这 24ms 的插值质量差异在像素上不可见。"""
     from PIL import Image
-    scale = max(width / img.width, height / img.height)
-    nw, nh = round(img.width * scale), round(img.height * scale)
-    img = img.resize((nw, nh), Image.Resampling.BICUBIC)
-    left, top = (nw - width) // 2, (nh - height) // 2
-    return _img_to_tensor(img.crop((left, top, left + width, top + height)))
+    if crop:
+        scale = max(width / img.width, height / img.height)
+        nw, nh = round(img.width * scale), round(img.height * scale)
+        img = img.resize((nw, nh), Image.Resampling.BICUBIC)
+        left, top = (nw - width) // 2, (nh - height) // 2
+        return img.crop((left, top, left + width, top + height))
+    return img.resize((width, height), Image.Resampling.BICUBIC)
 
 
-def _prepare_image_tensor(img, width: int, height: int) -> torch.Tensor:
-    """参考图直接缩放到目标尺寸（局部重绘：保持整图内容，mask 与输出逐像素对齐）。
-    同样只喂 VAE，用 BICUBIC。注意输出图里蒙版外的像素来自外层单独用
-    LANCZOS 缩放的原图，所以这里降级不影响成品锐度。"""
-    from PIL import Image
-    return _img_to_tensor(img.resize((width, height), Image.Resampling.BICUBIC))
+def _prepare_init_tensor(img, width: int, height: int, crop: bool = True) -> torch.Tensor:
+    """预处理后的参考图 → (1,3,1,H,W)、[-1,1] 的 bf16 张量。
+    .copy() 不是白费的：np.asarray(PIL) 拿到的是只读视图，torch.from_numpy 会告警；
+    这次拷贝实测约 0.03ms，换掉每次出图的告警刷屏很划算。"""
+    return _img_to_tensor(_prepare_init_pil(img, width, height, crop))
 
 
 INPAINT_MAX_EDGE = 1536  # 修图输出最长边上限（与前端参考图压缩一致）
@@ -116,8 +117,7 @@ def _encode_init_latents(img, width: int, height: int, batch: int,
     （接口校验、探尺寸、编码前各来一次），白烧 300ms CPU，其中一遍还压在 TASKS 锁里。
     必须 no_grad：否则 Wan VAE 编码的激活图全被 autograd 扣住直接 OOM。
     调用方持有 model_lock。"""
-    x = (_prepare_init_tensor(img, width, height) if crop
-         else _prepare_image_tensor(img, width, height)).to(state.pipe._execution_device)
+    x = _prepare_init_tensor(img, width, height, crop).to(state.pipe._execution_device)
     vae = state.pipe.vae
     z = vae.encode(x).latent_dist.mode()  # (1, z_dim, 1, h, w)，取确定性 mode
     mean = torch.tensor(vae.config.latents_mean, device=z.device, dtype=z.dtype).view(1, -1, 1, 1, 1)
@@ -256,7 +256,7 @@ def _alloc_stem(task: dict, seed: int, index: int) -> str:
     return stem
 
 
-def _save_image(image, task: dict, seed: int, index: int) -> dict:
+def _save_image(image, task: dict, seed: int, index: int, src_prepared=None) -> dict:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     stem = _alloc_stem(task, seed, index)
     jpg_path = OUTPUT_DIR / f"{stem}.jpg"
@@ -284,6 +284,19 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
         "created_at": int(time.time()),
         "model": "Krea 2 Turbo",
     }
+    # 图生图/修图的「改图前」原图：与成品逐像素对齐，画廊灯箱前后对比用。
+    # 落盘失败只丢对比能力，不影响成品本身
+    has_src = False
+    if src_prepared is not None:
+        try:
+            src_dir = OUTPUT_DIR / "src"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            src_prepared.save(src_dir / f"{stem}.jpg", quality=95)
+            has_src = True
+        except Exception:  # noqa: BLE001
+            logger.exception("source image save failed")
+    if has_src:
+        meta["src"] = True
     _bake_exif_params(image, jpg_path, meta)
     (OUTPUT_DIR / f"{stem}.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -294,6 +307,8 @@ def _save_image(image, task: dict, seed: int, index: int) -> dict:
         keys += ("strength",)
     if task["request"].get("source_id"):
         keys += ("source_id",)
+    if has_src:
+        keys += ("src",)
     return {"id": stem, "url": f"/outputs/{stem}.jpg", **{k: meta[k] for k in keys}}
 
 
@@ -337,6 +352,7 @@ def _run_task(req: state.GenRequest) -> None:
         mask_packed = None
         inv_mask_packed = None
         inpaint_src = None  # (原图缩放后 PIL, L 模蒙版) —— 像素级合成用
+        src_prepared = None  # 与输出同尺寸的原图，落盘给画廊前后对比用
         if req.init_image:
             width, height = task["request"]["width"], task["request"]["height"]
             src_img = _decode_image_b64(req.init_image)  # 整个任务只解这一次
@@ -350,6 +366,9 @@ def _run_task(req: state.GenRequest) -> None:
                 inv_mask_packed = 1.0 - mask_packed
                 # 合成源用 LANCZOS：蒙版外的像素就是成品像素，这里的锐度不能降级
                 inpaint_src = (src_img.resize((width, height), Image.LANCZOS), comp_mask)
+                src_prepared = inpaint_src[0]  # 对比原图与蒙版外的成品逐位一致
+            else:
+                src_prepared = _prepare_init_pil(src_img, width, height)
 
         # 每轮独立调用管线（每轮 batch 张、独立种子 = 基种子 + 轮号），
         # 图片逐轮落盘并追加进 task，前端可边跑边看；取消时当前轮丢弃、已完成轮保留
@@ -408,7 +427,7 @@ def _run_task(req: state.GenRequest) -> None:
                     # 像素级兜底合成：蒙版外逐像素保持原图（VAE 往返有微小色漂，这里归零）
                     image = Image.composite(image, inpaint_src[0], inpaint_src[1])
                 task["images"].append(
-                    _save_image(image, task, seed, round_idx * req.batch + i))
+                    _save_image(image, task, seed, round_idx * req.batch + i, src_prepared))
         task["state"] = "done"
         record_usage(req.styles, req.role)  # 成功才计使用频率
     except Exception as exc:  # noqa: BLE001 - 生成失败细节透出给前端

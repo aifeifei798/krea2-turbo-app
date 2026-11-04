@@ -482,11 +482,13 @@
       <div id="lb-imgzone" class="relative pointer-events-auto w-fit max-w-full flex items-center justify-center">
         <img id="lb-img" src="" alt="" class="max-h-[70vh] lg:max-h-[85vh] max-w-full object-contain rounded-md border border-border">
         <img id="lb-compare-img" class="hidden absolute inset-0 w-full h-full object-contain rounded-md" alt="原图" data-i18n-alt="原图">
-        <div id="lb-compare-bar" class="hidden absolute top-0 bottom-0 w-0.5 bg-accent cursor-ew-resize touch-none" style="left:50%">
+        <div id="lb-compare-bar" class="hidden absolute top-0 bottom-0 w-0.5 bg-accent pointer-events-none" style="left:50%" aria-hidden="true">
           <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full border border-accent bg-paper/90 text-accent flex items-center justify-center pointer-events-none">
             <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>
           </div>
         </div>
+        <span id="lb-compare-tag-l" class="hidden absolute left-2 top-2 rounded-sm border border-border bg-panel/85 px-1.5 py-0.5 text-xs font-mono text-muted" data-i18n="原图">原图</span>
+        <span id="lb-compare-tag-r" class="hidden absolute right-2 top-2 rounded-sm border border-border bg-panel/85 px-1.5 py-0.5 text-xs font-mono text-muted" data-i18n="新图">新图</span>
         <button id="lb-prev" type="button" aria-label="上一张" data-lb-prev data-i18n-aria="上一张"
           class="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-panel/85 text-muted text-lg leading-none hover:text-accent hover:border-accent transition-colors disabled:opacity-30 disabled:pointer-events-none">‹</button>
         <button id="lb-next" type="button" aria-label="下一张" data-lb-next data-i18n-aria="下一张"

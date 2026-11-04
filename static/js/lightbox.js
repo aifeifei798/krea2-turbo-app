@@ -8,7 +8,9 @@ let lightboxId = null;
 let deleteArmed = false;
 let deleteTimer = null;
 
-/* 修图前后对比：compareOn 时原图覆盖层按拖动条位置裁剪（左=原图，右=修后） */
+/* 图生图/修图前后对比：中间线分割原图与新图，开启后按住图片任意位置左右拖动
+   （左=原图，右=新图）。原图优先用生成时落盘的 outputs/src/{id}.jpg（与成品逐像素对齐），
+   旧修图数据回退到画廊里的 source_id 原图 */
 let compareOn = false;
 let compareSrc = null;
 
@@ -23,6 +25,11 @@ function setCompare(on) {
   $("lb-compare-img").src = compareSrc || "";
   $("lb-compare-img").classList.toggle("hidden", !on);
   $("lb-compare-bar").classList.toggle("hidden", !on);
+  $("lb-compare-tag-l").classList.toggle("hidden", !on);
+  $("lb-compare-tag-r").classList.toggle("hidden", !on);
+  // 拖动目标是整张图而非细线：开启时整图变左右拖动光标、禁掉触屏滚动
+  $("lb-imgzone").classList.toggle("cursor-ew-resize", on);
+  $("lb-imgzone").classList.toggle("touch-none", on);
   $("lb-compare-btn").classList.toggle("text-accent", on);
   if (on) setComparePos(50);
 }
@@ -32,16 +39,22 @@ function openLightbox(id) {
   if (!img) return;
   lightboxId = id;
   disarmDelete();
-  // 修图结果带 source_id 时预载原图，能读到才给「对比」按钮
+  // 有「改图前」原图就自动开启对比（探测加载成功后）；失败则连按钮一起藏
   setCompare(false);
   $("lb-compare-btn").classList.add("hidden");
   compareSrc = null;
-  if (img.source_id) {
-    const src = `/outputs/${img.source_id}.jpg`;
+  const srcUrl = img.src ? `/outputs/src/${img.id}.jpg`
+    : (img.source_id ? `/outputs/${img.source_id}.jpg` : null);
+  if (srcUrl) {
     const probe = new Image();
-    probe.onload = () => { if (lightboxId === id) { compareSrc = src; $("lb-compare-btn").classList.remove("hidden"); } };
+    probe.onload = () => {
+      if (lightboxId !== id) return;
+      compareSrc = srcUrl;
+      $("lb-compare-btn").classList.remove("hidden");
+      setCompare(true);
+    };
     probe.onerror = () => { if (lightboxId === id) $("lb-compare-btn").classList.add("hidden"); };
-    probe.src = src;
+    probe.src = srcUrl;
   }
   $("lb-img").src = img.url;
   $("lb-img").alt = img.prompt || t("生成的图片");
@@ -151,24 +164,26 @@ export function bindLightbox() {
     }
     if (lightboxId) deleteImage(lightboxId);
   });
-  // 修图前后对比：拖动条（pointer 捕获，0-100%）
-  const bar = $("lb-compare-bar");
-  bar.addEventListener("pointerdown", (e) => {
+  // 前后对比拖动：按住图片任意位置左右拖（pointer 捕获），中间细线只是视觉指示；
+  // 翻页按钮不参与拖动
+  const zone = $("lb-imgzone");
+  zone.addEventListener("pointerdown", (e) => {
+    if (!compareOn || e.target.closest("button, a")) return;
     e.preventDefault();
-    try { bar.setPointerCapture(e.pointerId); } catch { /* 指针已失效则不捕获 */ }
+    try { zone.setPointerCapture(e.pointerId); } catch { /* 指针已失效则不捕获 */ }
     const move = (ev) => {
-      const rect = $("lb-imgzone").getBoundingClientRect();
+      const rect = zone.getBoundingClientRect();
       setComparePos(((ev.clientX - rect.left) / rect.width) * 100);
     };
     move(e);
     const up = () => {
-      bar.removeEventListener("pointermove", move);
-      bar.removeEventListener("pointerup", up);
-      bar.removeEventListener("pointercancel", up);
+      zone.removeEventListener("pointermove", move);
+      zone.removeEventListener("pointerup", up);
+      zone.removeEventListener("pointercancel", up);
     };
-    bar.addEventListener("pointermove", move);
-    bar.addEventListener("pointerup", up);
-    bar.addEventListener("pointercancel", up);
+    zone.addEventListener("pointermove", move);
+    zone.addEventListener("pointerup", up);
+    zone.addEventListener("pointercancel", up);
   });
   $("lb-compare-btn").addEventListener("click", () => setCompare(!compareOn));
   // 灯箱直接送修图：生成 → 挑毛病 → 就地涂抹重绘
