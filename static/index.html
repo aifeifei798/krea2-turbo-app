@@ -138,34 +138,38 @@
             <canvas id="inpaint-canvas" aria-label="涂抹蒙版画布" data-i18n-aria="涂抹蒙版画布"
               class="absolute inset-0 w-full h-full rounded-md cursor-none touch-none"></canvas>
           </div>
-          <div class="flex flex-wrap items-center gap-1.5 mt-2">
-            <input id="inpaint-brush" type="range" min="6" max="80" step="2" value="28" aria-label="画笔大小" data-i18n-aria="画笔大小"
-              class="flex-1 min-w-0 accent-accent">
-            <span id="inpaint-brush-val" class="text-xs font-mono text-ink w-6 text-right shrink-0">28</span>
-            <button type="button" data-inpaint-tool="brush" aria-label="画笔工具" data-i18n-aria="画笔工具"
-              class="inline-flex items-center gap-1 px-2 shrink-0">
-              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              <span class="hidden sm:inline" data-i18n="画笔">画笔</span></button>
-            <button type="button" data-inpaint-tool="eraser" aria-label="橡皮工具" data-i18n-aria="橡皮工具"
-              class="inline-flex items-center gap-1 px-2 shrink-0">
-              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21M22 21H7M5 11l9 9"/></svg>
-              <span class="hidden sm:inline" data-i18n="橡皮">橡皮</span></button>
-            <button type="button" data-inpaint-tool="lasso" aria-label="套索工具（自由圈选闭合区域）" data-i18n-aria="套索工具（自由圈选闭合区域）"
-              class="inline-flex items-center gap-1 px-2 shrink-0">
-              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="9" rx="8" ry="6" stroke-dasharray="3 2.5"/><path d="M9 14.6 7.5 21"/></svg>
-              <span class="hidden sm:inline" data-i18n="套索">套索</span></button>
-            <button type="button" id="inpaint-undo" aria-label="撤销上一笔" data-i18n-aria="撤销上一笔"
-              class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
-              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
-              <span class="hidden sm:inline" data-i18n="撤销">撤销</span></button>
-            <button type="button" id="inpaint-clear" aria-label="清空全部涂抹" data-i18n-aria="清空全部涂抹"
-              class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
-              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-              <span class="hidden sm:inline" data-i18n="清空">清空</span></button>
-            <button type="button" id="inpaint-fine" aria-label="打开精细选区（放大涂抹）" data-i18n-aria="打开精细选区（放大涂抹）"
-              class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
-              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>
-              <span class="hidden sm:inline" data-i18n="精细">精细</span></button>
+          <div class="mt-2 flex flex-col gap-1.5">
+            <div class="flex items-center gap-1.5">
+              <input id="inpaint-brush" type="range" min="6" max="80" step="2" value="28" aria-label="画笔大小" data-i18n-aria="画笔大小"
+                class="flex-1 min-w-0 accent-accent">
+              <span id="inpaint-brush-val" class="text-xs font-mono text-ink w-6 text-right shrink-0">28</span>
+              <button type="button" data-inpaint-tool="brush" aria-label="画笔工具" data-i18n-aria="画笔工具"
+                class="inline-flex items-center gap-1 px-2 shrink-0">
+                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                <span class="hidden sm:inline" data-i18n="画笔">画笔</span></button>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" data-inpaint-tool="eraser" aria-label="橡皮工具" data-i18n-aria="橡皮工具"
+                class="inline-flex items-center gap-1 px-2 shrink-0">
+                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21M22 21H7M5 11l9 9"/></svg>
+                <span class="hidden sm:inline" data-i18n="橡皮">橡皮</span></button>
+              <button type="button" data-inpaint-tool="lasso" aria-label="套索工具（自由圈选闭合区域）" data-i18n-aria="套索工具（自由圈选闭合区域）"
+                class="inline-flex items-center gap-1 px-2 shrink-0">
+                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="9" rx="8" ry="6" stroke-dasharray="3 2.5"/><path d="M9 14.6 7.5 21"/></svg>
+                <span class="hidden sm:inline" data-i18n="套索">套索</span></button>
+              <button type="button" id="inpaint-undo" aria-label="撤销上一笔" data-i18n-aria="撤销上一笔"
+                class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
+                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
+                <span class="hidden sm:inline" data-i18n="撤销">撤销</span></button>
+              <button type="button" id="inpaint-clear" aria-label="清空全部涂抹" data-i18n-aria="清空全部涂抹"
+                class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
+                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                <span class="hidden sm:inline" data-i18n="清空">清空</span></button>
+              <button type="button" id="inpaint-fine" aria-label="打开精细选区（放大涂抹）" data-i18n-aria="打开精细选区（放大涂抹）"
+                class="inline-flex items-center gap-1 px-2 py-1.5 shrink-0 rounded-sm border font-mono text-xs transition-colors border-border bg-panel text-muted hover:border-accent hover:text-ink">
+                <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>
+                <span class="hidden sm:inline" data-i18n="精细">精细</span></button>
+            </div>
           </div>
         </div>
         <div class="mt-3">
