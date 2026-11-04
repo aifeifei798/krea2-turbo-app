@@ -1,4 +1,4 @@
-"""模型管理：按精度构建/加载/卸载 Krea2 管线（bf16 offload 与 int8/int4 量化）。"""
+"""模型管理：按精度构建/加载/卸载 Krea2 管线（fp8/int8/int4 量化与 bf16 offload）。"""
 
 import gc
 import logging
@@ -19,12 +19,12 @@ def _quant_source(precision: str) -> Path:
     """该精度实际读取的目录：预量化目录（显式指定 > 同级约定）> 模型目录（现场量化）。"""
     return paths.get_quant_dir(precision) or paths.get_model_dir()
 
-# 启动精度可用环境变量指定：KREA_PRECISION=bf16|int8|int4（server.sh 传入），默认 int8
-DEFAULT_PRECISION = os.environ.get("KREA_PRECISION", "int8").strip().lower()
+# 启动精度可用环境变量指定：KREA_PRECISION=bf16|fp8|int8|int4（server.sh 传入），默认 fp8
+DEFAULT_PRECISION = os.environ.get("KREA_PRECISION", "fp8").strip().lower()
 if DEFAULT_PRECISION not in _PRECISIONS:
-    logger.warning("KREA_PRECISION=%s 无效，回退 int8（可选 %s）",
+    logger.warning("KREA_PRECISION=%s 无效，回退 fp8（可选 %s）",
                    DEFAULT_PRECISION, "/".join(_PRECISIONS))
-    DEFAULT_PRECISION = "int8"
+    DEFAULT_PRECISION = "fp8"
 PRECISION_HINTS = {
     "bf16": "全精度 · offload 模式，权重需 ~58GB 磁盘换页缓冲（RAM 紧张慎用），画质无损",
     "fp8": "transformer fp8(W8A8) + torch.compile 融合 · 全 GPU 常驻 ~16.7 GiB，"

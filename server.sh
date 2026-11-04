@@ -2,7 +2,7 @@
 # Krea 2 Turbo 工作台 · 服务管理
 #
 # 用法:
-#   ./server.sh start   [精度] [端口]   后台启动（默认精度 int8，默认端口 8420）
+#   ./server.sh start   [精度] [端口]   后台启动（默认精度 fp8，默认端口 8420）
 #   ./server.sh stop                    停止服务
 #   ./server.sh key                     显示 API 访问密钥
 #   ./server.sh lan     [精度] [端口]   局域网模式（0.0.0.0，手机等设备可访问）
@@ -12,7 +12,7 @@
 #   ./server.sh run     [精度] [端口]   前台运行（Ctrl+C 停止）
 #   ./server.sh help                    显示本说明
 #
-# 目录等启动配置见 .env（参考 .env.example）；兼容写法：./server.sh int8 等价于 run
+# 目录等启动配置见 .env（参考 .env.example）；兼容写法：./server.sh fp8 等价于 run
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -110,7 +110,7 @@ wait_ready() {
 
 do_start() {
   local precision="${1:-}" port="${2:-}" host="${3:-127.0.0.1}" pid portp
-  [ -z "$precision" ] && precision=$(meta_get precision); [ -z "$precision" ] && precision=int8
+  [ -z "$precision" ] && precision=$(meta_get precision); [ -z "$precision" ] && precision=fp8
   [ -z "$port" ] && port=$(meta_get port); [ -z "$port" ] && port=$PORT_DEFAULT
   valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | fp8 | int8 | int4）"; exit 1; }
   case "$port" in ''|*[!0-9]*) err "无效端口 \"$port\""; exit 1 ;; esac
@@ -231,7 +231,7 @@ do_log() {
 }
 
 do_run() {
-  local precision="${1:-int8}" port="${2:-$PORT_DEFAULT}" pid
+  local precision="${1:-fp8}" port="${2:-$PORT_DEFAULT}" pid
   valid_precision "$precision" || { err "无效精度 \"$precision\"（可选：bf16 | fp8 | int8 | int4）"; exit 1; }
   if [ ! -x .venv/bin/python ]; then
     err "未找到 .venv —— 先运行 ./install.sh 完成安装"

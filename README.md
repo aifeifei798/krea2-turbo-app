@@ -31,10 +31,10 @@
   | 精度 | 显存（常驻/峰值） | 8 步 1216×832 | 说明 |
   |---|---|---|---|
   | bf16 | offload 模式（峰值 ~24 GiB） | ~9s | 画质无损 |
-  | fp8（torchao fp8 W8A8 + torch.compile） | ~16.7 / 20.7 GiB | **~3.8s** | 速度最快；首次生成前需预编译约 1 分钟 |
+  | fp8（torchao fp8 W8A8 + torch.compile） | ~16.7 / 20.7 GiB | **~3.8s** | **默认**；速度最快，首次生成前需预编译约 1 分钟 |
   | int8（torchao int8wo） | ~16.7 / 18.2 GiB | ~6.4s | 全 GPU，无需编译，即点即出 |
   | int4（bnb nf4） | ~9.9 / 11.4 GiB | — | 最省显存，画质略降 |
-  精度切换需重载模型（约半分钟）。|
+  精度切换需重载模型（约半分钟）。默认 fp8；若机器上还没有 fp8 预量化目录，启动会现场量化（较慢，约 70s、峰值 27GB RAM），建议先跑一次 `scripts/export_quantized.py fp8`。|
 
   **fp8 说明**：只量化 transformer（12.82B，占单步 97% 的时间），权重与激活都是 fp8 e4m3、per-row 动态量化，VAE 保持 bf16。`torch.compile` 融合激活量化/amax/rope/norm 等逐元素算子，实测每步 **766ms(int8) → 448ms(fp8)**；编译用 `dynamic=True`，一次覆盖所有分辨率。首次前向要编译约 1 分钟，`load_model` 完成后会在后台线程预先跑掉（模型页显示「预编译内核中」），此时提交的任务排队等编译结束。给 LoRA 激活状态切换（无 LoRA ↔ 有 LoRA）也要各编译一次。`KREA_FP8_COMPILE=0` 可关闭编译（退回 eager，约 670ms/步）。int8 不能挂编译：torchao int8 自定义算子实测 30 分钟不收敛。
 
@@ -57,13 +57,13 @@
 # 或手动：cp .env.example .env（编辑 KREA_MODEL_DIR）→ 见下方手动步骤
 chmod +x server.sh
 
-./server.sh start          # 后台启动（默认 int8，也可指定 bf16|fp8|int8|int4；端口默认 8420）
+./server.sh start          # 后台启动（默认 fp8，也可指定 bf16|fp8|int8|int4；端口默认 8420）
 ./server.sh status         # 进程 / 模型 / LoRA / 显存状态
 ./server.sh log -f         # 跟随日志（或 log 30 看最近 30 行）
 ./server.sh restart        # 重启（沿用上次精度；也可带精度参数）
 ./server.sh stop           # 停止
 
-./server.sh run bf16       # 前台运行（默认 int8，Ctrl+C 停止），./server.sh fp8 是它的等价写法
+./server.sh run bf16       # 前台运行（默认 fp8，Ctrl+C 停止），./server.sh int8 是它的等价写法
 ```
 
 或手动分步：
