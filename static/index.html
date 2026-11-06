@@ -115,6 +115,14 @@
             </div>
           </div>
         </div>
+        <div id="i2i-crop-row" class="hidden mt-2 flex items-center gap-2">
+          <button id="i2i-crop" type="button" aria-label="剪裁参考图" data-i18n-aria="剪裁参考图"
+            class="shrink-0 inline-flex items-center gap-1 px-2 py-1.5 rounded-sm border border-border bg-panel font-mono text-xs text-muted hover:border-accent hover:text-ink transition-colors">
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v16h16M2 6h16v16"/></svg>
+            <span data-i18n="剪裁">剪裁</span>
+          </button>
+          <span class="min-w-0 text-xs text-muted leading-relaxed" data-i18n="按当前比例剪裁，拖动取景框选择范围">按当前比例剪裁，拖动取景框选择范围</span>
+        </div>
         <input id="i2i-file" type="file" accept="image/*" class="hidden">
       </div>
 
@@ -598,6 +606,50 @@
         <div id="fine-ring" class="hidden"></div>
       </div>
       <div class="px-4 py-2 border-t border-border text-xs text-muted shrink-0" data-i18n="滚轮缩放（以光标为中心）· 抓手拖动平移 · 放大后涂抹更精细，画笔大小与主面板同步">滚轮缩放（以光标为中心）· 抓手拖动平移 · 放大后涂抹更精细，画笔大小与主面板同步</div>
+    </div>
+  </div>
+
+  <!-- 图生图参考图剪裁弹窗：按所选比例拖动/缩放取景框，应用后替换参考图 -->
+  <div id="crop-dialog" class="hidden fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="剪裁参考图" data-i18n-aria="剪裁参考图">
+    <div class="absolute inset-0 bg-paper/90" data-crop-close></div>
+    <div class="absolute inset-3 md:inset-8 flex flex-col border border-border rounded-lg bg-paper shadow-lg pointer-events-auto overflow-hidden">
+      <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-border shrink-0">
+        <span class="text-sm font-mono text-ink" data-i18n="剪裁参考图">剪裁参考图</span>
+        <div id="crop-ratios" class="flex flex-wrap items-center gap-1" role="group" aria-label="剪裁比例" data-i18n-aria="剪裁比例"></div>
+        <button id="crop-close" type="button" aria-label="关闭剪裁" data-i18n-aria="关闭剪裁"
+          class="ml-auto text-muted hover:text-ink text-lg leading-none px-1">×</button>
+      </div>
+      <div id="crop-stage" class="relative flex-1 min-h-0 bg-panel-2 flex items-center justify-center overflow-hidden touch-none p-3">
+        <div id="crop-frame" class="relative overflow-hidden select-none">
+          <img id="crop-base" class="block select-none" draggable="false" alt="待剪裁的参考图" data-i18n-alt="待剪裁的参考图">
+          <div id="crop-dim" class="pointer-events-none absolute inset-0" aria-hidden="true">
+            <span id="crop-dim-t" class="absolute inset-x-0 top-0 bg-black/55"></span>
+            <span id="crop-dim-b" class="absolute inset-x-0 bottom-0 bg-black/55"></span>
+            <span id="crop-dim-l" class="absolute left-0 bg-black/55"></span>
+            <span id="crop-dim-r" class="absolute right-0 bg-black/55"></span>
+          </div>
+          <div id="crop-box" tabindex="0" role="group" aria-label="取景框（方向键微调）" data-i18n-aria="取景框（方向键微调）"
+            class="absolute cursor-move touch-none border border-accent"
+            style="left:0;top:0;width:100%;height:100%">
+            <span class="pointer-events-none absolute inset-y-0 left-1/3 w-px bg-white/40"></span>
+            <span class="pointer-events-none absolute inset-y-0 left-2/3 w-px bg-white/40"></span>
+            <span class="pointer-events-none absolute inset-x-0 top-1/3 h-px bg-white/40"></span>
+            <span class="pointer-events-none absolute inset-x-0 top-2/3 h-px bg-white/40"></span>
+            <span data-crop-handle="nw" aria-hidden="true" class="absolute left-0 top-0 w-4 h-4 border border-black/40 bg-accent cursor-nwse-resize"></span>
+            <span data-crop-handle="ne" aria-hidden="true" class="absolute right-0 top-0 w-4 h-4 border border-black/40 bg-accent cursor-nesw-resize"></span>
+            <span data-crop-handle="sw" aria-hidden="true" class="absolute left-0 bottom-0 w-4 h-4 border border-black/40 bg-accent cursor-nesw-resize"></span>
+            <span data-crop-handle="se" aria-hidden="true" class="absolute right-0 bottom-0 w-4 h-4 border border-black/40 bg-accent cursor-nwse-resize"></span>
+          </div>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-3 px-4 py-2.5 border-t border-border shrink-0">
+        <span class="flex-1 min-w-0 text-xs text-muted leading-relaxed" data-i18n="拖动框内移动取景，拖四角按比例缩放">拖动框内移动取景，拖四角按比例缩放</span>
+        <span id="crop-size" class="shrink-0 text-xs font-mono text-ink">—</span>
+        <button id="crop-cancel" type="button"
+          class="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-sm border border-border text-xs text-muted hover:text-ink hover:border-accent transition-colors" data-i18n="取消">取消</button>
+        <button id="crop-apply" type="button"
+          class="shrink-0 whitespace-nowrap px-3.5 py-1.5 rounded-sm bg-accent text-paper text-xs font-bold hover:opacity-90 transition-opacity" data-i18n="应用剪裁">应用剪裁</button>
+      </div>
     </div>
   </div>
 

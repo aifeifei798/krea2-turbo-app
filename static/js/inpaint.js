@@ -1,10 +1,9 @@
 /* 修图模式：上传图片 + 画笔涂抹蒙版（画笔/橡皮/撤销/清空），提交时导出白笔迹黑底蒙版。
    笔迹以图像像素坐标存储（与显示尺寸无关），蒙版导出带轻微羽化供后端软合成。 */
-import { $, state, toast, aspectClass, syncDataBlock } from "./core.js";
+import { $, state, toast, aspectClass, syncDataBlock, MAX_IMAGE_EDGE } from "./core.js";
 import { t } from "./i18n.js";
 import { savedSettings, saveSettings } from "./settings.js";
 
-const MAX_EDGE = 1536; // 原图压缩上限（与图生图一致；服务端同值兜底）
 /* 蒙版预览固有色：画在不透明离屏层上，再整体半透明合成 —— 叠几遍都不会加深，
    这样"看到的红色深浅"永远等于"真实蒙版覆盖"（导出的蒙版本身是实心 255） */
 export const MASK_COLOR = "#ff3b3b";
@@ -57,14 +56,14 @@ export function getInpaintPayload() {
   };
 }
 
-/* 载入要修的图片（Blob）：压缩到 MAX_EDGE、清空笔迹、展示编辑器。
+/* 载入要修的图片（Blob）：压缩到 MAX_IMAGE_EDGE、清空笔迹、展示编辑器。
    sourceId：从画廊/灯箱带入的源图 id（手动上传则为 null），供修图结果前后对比 */
 export function loadInpaintFile(blob, sourceId = null) {
   const url = URL.createObjectURL(blob);
   const img = new Image();
   img.onload = () => {
     URL.revokeObjectURL(url);
-    const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height));
+    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
     const w = Math.round(img.width * scale);
     const h = Math.round(img.height * scale);
     const canvas = document.createElement("canvas");

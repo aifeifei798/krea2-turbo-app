@@ -5,7 +5,7 @@
 ## 目录
 
 - `server/` — main.py（FastAPI 路由）、pipeline.py（**门面**，重导出下方四模块；main.py 只 import 它）、state.py（共享状态：管线实例/模型状态/任务表/锁，依赖图叶子）、model.py（模型加载/卸载/精度）、lora.py（LoRA 常驻）、tasks.py（图像编码/生成 worker/任务队列）、paths.py（.env 目录配置）、presets.py（比例/风格/角色聚合+用量统计）、style_data.py 与 juese_data.py（**生成文件，勿手改**，由 scripts/port_presets.py 从外部数据转换）
-- `static/js/` — 前端 15 个 ES 模块（无打包器，`<script type="module">` 直载）
+- `static/js/` — 前端 16 个 ES 模块（无打包器，`<script type="module">` 直载）
 - `static/css/` — src/app.css 为源，dist/app.css 为构建产物（gitignored）
 - `scripts/` — port_presets.py（预设数据转换）、export_quantized.py（预量化导出）、gen.py（命令行出图）、mcp_server.py（MCP server，给 AI agent 用）、check_i18n.mjs / check_imports.mjs（静态校验，见下）
 - `install.sh` / `server.sh` — 安装与服务管理；`outputs/` 落盘图片+json 元数据
@@ -34,7 +34,7 @@ node ~/.zcode/skills/design-forge/scripts/forge.mjs static/index.html static/js/
 
 ## 架构边界（改代码前必读）
 
-- **前端依赖单向无环**：i18n.js（叶子）→ core.js（state/$/toast/escape/friendlyApiError/apiFetch/syncDataBlock/bindTheme）← settings.js ← {lora, picker, common-words} ← {model-page, studio, queue} ← {gallery, inpaint} ← {lightbox（经 gallery.registerLightbox 回调拿到开关能力）, inpaint-fine（经 inpaint.js 的访问器读写共享笔迹）}；app.js 只做装配。新增共享工具放 core.js，跨模块状态一律访问器函数（数组会被整体重置，引用不能长期持有），不要制造反向引用。
+- **前端依赖单向无环**：i18n.js（叶子）→ core.js（state/$/toast/escape/friendlyApiError/apiFetch/syncDataBlock/bindTheme）← settings.js ← {lora, picker, common-words} ← {model-page, studio, queue} ← {gallery, inpaint} ← {lightbox（经 gallery.registerLightbox 回调拿到开关能力）, inpaint-fine（经 inpaint.js 的访问器读写共享笔迹）}；crop.js 只依赖 core/i18n，由 studio.js 调 `bindCrop(applyCroppedInit)` 装配；app.js 只做装配。新增共享工具放 core.js，跨模块状态一律访问器函数（数组会被整体重置，引用不能长期持有），不要制造反向引用。
 - **后端依赖单向无环**：state.py（叶子：pipe/MODEL_STATE/TASKS/两把锁/GenRequest）← lora.py 与 model.py（model 只在 load 时调 lora._load_all_loras_locked，lora 不依赖 model）← tasks.py；pipeline.py 是纯门面（重导出），main.py 只 import pipeline。新接口加到对应模块并经 pipeline.py 重导出。
 - **模块顶层 const 不挂 window**：浏览器 evaluate/控制台看不到 `state`，调试用 DOM 断言。
 - **后端队列**：单 worker 串行；整个生成持 `_model_lock`（卸载/精度切换会等生成结束）；LoRA 开关 acquire(timeout=2s) 忙时 409。

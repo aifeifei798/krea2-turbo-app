@@ -1,5 +1,5 @@
 /* 制作面板：预设渲染、比例/步数/批量/次数/种子绑定、模式切换与图生图参考图 */
-import { $, state, toast, aspectClass, syncDataBlock } from "./core.js";
+import { $, state, toast, aspectClass, syncDataBlock, MAX_IMAGE_EDGE } from "./core.js";
 import { t } from "./i18n.js";
 import { savedSettings, saveSettings } from "./settings.js";
 import { syncStyleSummary } from "./picker.js";
@@ -7,6 +7,7 @@ import { syncCommonBadge } from "./common-words.js";
 import { generate } from "./queue.js";
 import { loadGallery } from "./gallery.js";
 import { loadInpaintFile } from "./inpaint.js";
+import { bindCrop } from "./crop.js";
 
 export function renderPresets(data) {
   state.styles = data.styles;
@@ -41,22 +42,30 @@ export function renderPresets(data) {
     b.title = a.name;
     b.setAttribute("aria-pressed", String(a.id === state.aspect));
     b.className = aspectClass(a.id === state.aspect);
-    b.addEventListener("click", () => {
-      state.aspect = a.id;
-      aspects.querySelectorAll("button").forEach((x) => {
-        const on = x.dataset.id === state.aspect;
-        x.setAttribute("aria-pressed", String(on));
-        x.className = aspectClass(on);
-      });
-      syncDataBlock();
-      saveSettings();
-    });
+    b.addEventListener("click", () => setAspect(a.id));
     aspects.appendChild(b);
   });
 
   /* 批量 / 次数用原生下拉（见 index.html），提交时直接读 select 值 */
 
   syncDataBlock();
+}
+
+/* 比例切换（面板按钮与剪裁弹窗共用）：更新状态、高亮、数据块和存档 */
+export function setAspect(id) {
+  if (!state.aspects.some((a) => a.id === id)) return;
+  state.aspect = id;
+  syncAspectButtons();
+  syncDataBlock();
+  saveSettings();
+}
+
+function syncAspectButtons() {
+  $("aspect-group").querySelectorAll("button").forEach((x) => {
+    const on = x.dataset.id === state.aspect;
+    x.setAttribute("aria-pressed", String(on));
+    x.className = aspectClass(on);
+  });
 }
 
 export function bindControls() {
@@ -92,6 +101,7 @@ export function bindControls() {
     e.stopPropagation();
     setInitImage(null);
   });
+  bindCrop(applyCroppedInit); // 剪裁按钮 + 弹窗（应用后替换参考图并同步比例）
   // 整页拖拽兜底：图片拖到上传框外也不让浏览器跳转打开原图，而是照常上传
   document.addEventListener("dragover", (e) => {
     if ([...(e.dataTransfer?.types || [])].includes("Files")) e.preventDefault();
@@ -138,8 +148,6 @@ function switchMode(id) {
   saveSettings();
 }
 
-const I2I_MAX_EDGE = 1536; // 参考图最长边上限（控制请求体积；服务端还会按比例裁缩）
-
 export function renderMode() {
   const group = $("mode-group");
   group.innerHTML = "";
@@ -177,7 +185,15 @@ function setInitImage(b64, thumb) {
   $("i2i-thumb").classList.toggle("hidden", !thumb);
   $("i2i-plus").classList.toggle("hidden", !!thumb);
   $("i2i-remove").classList.toggle("hidden", !thumb);
+  $("i2i-crop-row").classList.toggle("hidden", !thumb);
   saveSettings();
+}
+
+/* 剪裁弹窗应用回调：裁剪结果替换参考图，输出比例跟着裁剪比例走
+   （否则后端会按面板比例再中心裁一次，把刚选好的构图又切掉） */
+function applyCroppedInit({ b64, thumb, aspectId }) {
+  setAspect(aspectId);
+  setInitImage(b64, thumb);
 }
 
 /* 读参考图：canvas 限制最长边后转 JPEG base64（服务端再按比例中心裁缩） */
@@ -190,7 +206,7 @@ function readInitImageFromBlob(blob) {
   const img = new Image();
   img.onload = () => {
     URL.revokeObjectURL(url);
-    const scale = Math.min(1, I2I_MAX_EDGE / Math.max(img.width, img.height));
+    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(img.width * scale);
     canvas.height = Math.round(img.height * scale);
@@ -231,11 +247,7 @@ export function reuseAsRedraw(img) {
   state.commonWords = img.common || "";
   if (img.aspect_id && state.aspects.some((a) => a.id === img.aspect_id)) {
     state.aspect = img.aspect_id;
-    $("aspect-group").querySelectorAll("button").forEach((x) => {
-      const on = x.dataset.id === state.aspect;
-      x.setAttribute("aria-pressed", String(on));
-      x.className = aspectClass(on);
-    });
+    syncAspectButtons();
   }
   if (img.steps) $("steps").value = Math.min(Number($("steps").max) || 16, img.steps);
   syncStyleSummary();

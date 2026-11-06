@@ -4,6 +4,9 @@ import { t } from "./i18n.js";
 
 export const $ = (id) => document.getElementById(id);
 
+/* 上传图像最长边上限：图生图参考图/修图原图/剪裁结果共用（服务端同值兜底） */
+export const MAX_IMAGE_EDGE = 1536;
+
 export const state = {
   styles: [], // {id, name, name_en, category, usage}
   roles: [], // {id, name, name_en, usage}
