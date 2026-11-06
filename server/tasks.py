@@ -23,6 +23,7 @@ logger = logging.getLogger("krea.pipeline")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = BASE_DIR / "outputs"
+MODEL_NAME = "Krea 2 Turbo"  # 落盘元数据与 EXIF 共用一处，避免两处硬编码漂移
 
 
 # ---------------------------------------------------------------- 图像编码（SDEdit / 修图）
@@ -231,7 +232,8 @@ def _bake_exif_params(image, jpg_path: Path, meta: dict) -> None:
     styles = " · ".join(s["name"] for s in meta.get("styles", []))
     params = (f"{full}\n"
               f"Steps: {meta['steps']}, Seed: {meta['seed']}, "
-              f"Size: {meta['width']}x{meta['height']}, Model: Krea 2 Turbo"
+              f"Size: {meta['width']}x{meta['height']}, "
+              f"Model: {meta.get('model') or MODEL_NAME}"
               + (f", Styles: {styles}" if styles else "")
               + (", Inpaint" if meta.get("inpaint") else ""))
     # UserComment 约定：8 字节字符码 "UNICODE\0" + UTF-16-BE 正文
@@ -282,7 +284,7 @@ def _save_image(image, task: dict, seed: int, index: int, src_prepared=None) -> 
            if task["request"].get("source_id") else {}),
         "loras": task["request"]["loras"],
         "created_at": int(time.time()),
-        "model": "Krea 2 Turbo",
+        "model": MODEL_NAME,
     }
     # 图生图/修图的「改图前」原图：与成品逐像素对齐，画廊灯箱前后对比用。
     # 落盘失败只丢对比能力，不影响成品本身
@@ -370,6 +372,22 @@ def _run_task(req: state.GenRequest) -> None:
             else:
                 src_prepared = _prepare_init_pil(src_img, width, height)
 
+        # SDEdit 调度表只取决于 (steps, strength)，与轮号无关：整轮任务算一次。
+        # 管线内部每次 __call__ 都会照 sigmas+mu 重设 scheduler，这里只需借它取 sigma0。
+        steps_this = req.steps
+        raw_sigmas = None
+        sigma0 = 0.0
+        if init_latents is not None:
+            # 截断 sigma 表并按幅度加噪；蒸馏权重 shift 固定 mu=1.15
+            raw_sigmas, steps_this = _img2img_schedule(req.steps, req.strength)
+            mu = 1.15 if state.pipe.config.is_distilled else _dynamic_shift_mu(init_latents.shape[1])
+            state.pipe.scheduler.set_timesteps(sigmas=raw_sigmas, device="cuda", mu=mu)
+            sigma0 = float(state.pipe.scheduler.sigmas[0])
+            # 管线内部还会对自定义 sigmas 做时间平移（use_dynamic_shifting + mu），latent 实际
+            # 所处的噪声级是 shift 后的表（比 raw_sigmas 多一个结尾 0）。蒙版外回注必须按它算，
+            # 否则每步都拿「偏干净」的原图去混，边界带与模型看到的上下文都会系统性偏亮/偏糊。
+            shift_sigmas = state.pipe.scheduler.sigmas.tolist()
+
         # 每轮独立调用管线（每轮 batch 张、独立种子 = 基种子 + 轮号），
         # 图片逐轮落盘并追加进 task，前端可边跑边看；取消时当前轮丢弃、已完成轮保留
         for round_idx in range(req.rounds):
@@ -380,14 +398,8 @@ def _run_task(req: state.GenRequest) -> None:
             task["round"] = round_idx + 1
 
             generator = torch.Generator(device="cuda").manual_seed(seed)
-            steps_this = req.steps
             extra = {}
             if init_latents is not None:
-                # 截断 sigma 表并按幅度加噪；蒸馏权重 shift 固定 mu=1.15
-                raw_sigmas, steps_this = _img2img_schedule(req.steps, req.strength)
-                mu = 1.15 if state.pipe.config.is_distilled else _dynamic_shift_mu(init_latents.shape[1])
-                state.pipe.scheduler.set_timesteps(sigmas=raw_sigmas, device="cuda", mu=mu)
-                sigma0 = float(state.pipe.scheduler.sigmas[0])
                 noise = torch.randn(init_latents.shape, generator=generator,
                                     device=init_latents.device, dtype=init_latents.dtype)
                 extra = {
@@ -396,12 +408,16 @@ def _run_task(req: state.GenRequest) -> None:
                 }
 
             def on_step(pipeline, step_index, timestep, kwargs):
+                # 取消立即生效：_interrupt 只在下一次 __call__ 开头复位，取消请求若落在
+                # 「轮前检查」与「__call__ 复位」之间会被吞掉一整轮，这里每步补一次旗
+                if task.get("cancel"):
+                    pipeline._interrupt = True
                 task["step"] = round_idx * steps_this + step_index + 1
                 if mask_packed is not None:
                     # 修图：蒙版外（mask=0）每步回注「对应噪声级的原图潜变量」，
                     # 涂抹区（mask=1）保留模型输出真正去噪；与 QwenImageInpaintPipeline 同式
                     nxt = step_index + 1
-                    s = raw_sigmas[nxt] if nxt < len(raw_sigmas) else 0.0
+                    s = shift_sigmas[nxt] if nxt < len(shift_sigmas) else 0.0
                     kept = s * noise + (1.0 - s) * init_latents
                     kwargs["latents"] = \
                         mask_packed * kwargs["latents"] + inv_mask_packed * kept

@@ -118,17 +118,39 @@ scripts/gen.py "霓虹小巷" --style cinema --rounds 4 --out-dir ./out  # 批�
 
 每张图的 meta（`outputs/*.json`）同时记录用户提示词与**拼装后的完整提示词**（通用词 + 角色 + 风格模板 + 提示词），跨工具复现不用猜。
 
+## 实现备注（改这块前先看）
+
+- **取消任务不靠异常**：diffusers 里打断是 `if self.interrupt: continue`（`diffusers/pipelines/krea2/pipeline_krea2.py`），剩余步直接跳过、照常解码返回，**不抛异常**，全库也没有 `PipelineInterruptException`。所以 `_run_task` 不能靠 `except` 分「取消 / 失败」：取消的收尾在 `state.pipe(...)` 之后看 `task["cancel"]`（本轮半成品丢弃、已完成轮次保留），`except` 只接真错误——否则落盘失败之类会被当成「已取消」吞掉。另注意 `_interrupt` 只在下一次 `__call__` 开头复位，取消请求若正好落在「轮前检查」与「复位」之间会白跑一整轮，所以 `on_step` 每步补一次旗。
+- **蒙版外重注入必须用平移后的 sigmas**：scheduler 是 `FlowMatchEulerDiscreteScheduler`（`use_dynamic_shifting=True`、`time_shift_type=exponential`），管线内部会对传入的 `sigmas` 做 `time_shift(mu)`。`_img2img_schedule` 返回的是平移**前**的表（8 步 / 幅度 0.6 时 raw 为 0.625…0.125，实际是 0.8403…0.3109），`_run_task` 里回注用的 `s` 必须取 `scheduler.sigmas`（比 raw 多一个结尾 0）。取 raw 会每步都拿偏干净的原图去混，涂抹区与边界带系统性偏移（实测同种子 A/B：蒙版内平均差 31/255）。
+- **修图蒙版只认灰度**：前端 `exportMask()` 是黑底 + 白笔迹、画布完全不透明（alpha 恒 255），后端 `convert("L")` 才是对的；改成取 alpha 通道会得到全白蒙版 → 整图重绘。蒙版只由内置画布生成、不支持外部上传，别为「兼容 RGBA」动这条。
+- **改完回注/合成逻辑要验保真**：蒙版外的像素靠 `Image.composite` 兜底，验证方式是拿结果与 `outputs/src/<id>.jpg` 比——蒙版外 `px>2` 应为 0（只容 JPEG 落盘噪声）。
+
 ## 结构
 
 ```
 server/
-  main.py        FastAPI 路由（status / presets / generate / tasks / images）
-  pipeline.py    模型后台加载 + 单线程生成队列 + 步级进度
-  presets.py     风格与比例预设
+  main.py          FastAPI 路由与 API key 中间件（status / model / presets / loras / generate / tasks / images）
+  pipeline.py      门面：重导出下面四个模块，main.py 只 import 它
+  state.py         共享状态（管线实例 / 模型状态 / 任务表 / 两把锁 / GenRequest），依赖图叶子
+  model.py         按精度加载·卸载模型（bf16 offload / fp8 / int8 / int4，fp8 挂 torch.compile）
+  lora.py          LoRA 扫描、常驻加载、生成前对齐激活
+  tasks.py         图像编码（SDEdit / 修图）、单线程生成 worker、任务队列与落盘
+  paths.py         .env 目录配置、预量化目录解析、API key
+  presets.py       比例 / 风格 / 角色聚合 + 用量统计
+  style_data.py    风格预设数据（scripts/port_presets.py 生成，勿手改）
+  juese_data.py    角色预设数据（同上）
 static/
-  index.html     工作台界面（暗色，design-forge Signal 配方）
-  app.js         状态轮询 / 画廊 / 灯箱
-  css/src/       Tailwind v4 源 + forge-tokens.css（脚本生成）
-  css/dist/      构建产物（不手改）
-outputs/         生成图片 + json 元数据（src/ 存图生图/修图的改图前原图，供前后对比）
+  index.html       工作台界面（暗色，design-forge Signal 配方）
+  js/              15 个 ES module，无打包器（<script type="module"> 直载）；app.js 只做装配，core.js 是共享底座
+  css/src/         Tailwind v4 源 + forge-tokens.css（脚本生成）
+  css/dist/        构建产物（不手改）
+  lang/            语言包（键为中文原句，index.json 登记可用语言）
+scripts/
+  gen.py           命令行出图（纯标准库，走同一套 API 与队列）
+  mcp_server.py    MCP server（stdio，给 AI agent 用）
+  port_presets.py  预设数据 → style_data.py / juese_data.py
+  export_quantized.py  预量化权重导出（int8 / int4 / fp8，免现场量化）
+  check_i18n.mjs / check_imports.mjs  前端静态校验（i18n 键完整性、模块导入健康）
+  *_probe.py / smoke_test.py           选型与冒烟实测脚本，不参与运行
+outputs/           生成图片 + json 元数据（src/ 存改图前原图，供前后对比）
 ```
