@@ -14,6 +14,10 @@ logger = logging.getLogger("krea.pipeline")
 
 _PRECISIONS = ("bf16", "fp8", "int8", "int4")
 
+# 加载请求的原子占位：启动加载与 POST /api/model/load 共用，连点不会叠成两次重载
+_load_lock = threading.Lock()
+_load_inflight: str | None = None
+
 
 def _quant_source(precision: str) -> Path:
     """该精度实际读取的目录：预量化目录（显式指定 > 同级约定）> 模型目录（现场量化）。"""
@@ -173,44 +177,77 @@ def _unload_locked() -> None:
     state.set_state("unloaded", "未加载", precision=None, vram_gb=None)
 
 
+def begin_load(precision: str) -> bool:
+    """受理加载请求（原子占位）：成功 True，已有加载在途 False。
+    占位到线程真正开跑之间有空档，靠这里一次性堵住连点导致的重复重载。"""
+    global _load_inflight
+    with _load_lock:
+        if _load_inflight is not None:
+            return False
+        _load_inflight = precision
+        return True
+
+
+def request_load(precision: str) -> bool:
+    """占位并起后台线程；已在加载返回 False（上层据此回 409）。"""
+    if not begin_load(precision):
+        return False
+    threading.Thread(target=load_model, args=(precision,),
+                     name="model-loader", daemon=True).start()
+    return True
+
+
 def load_model(precision: str) -> None:
     """按指定精度加载模型，随后全量常驻加载 LoRA（调方应放到后台线程）。"""
-    with state.model_lock:
-        if state.MODEL_STATE["state"] == "loading":
-            return
+    global _load_inflight
+    try:
+        with state.model_lock:
+            if state.MODEL_STATE["state"] == "loading":
+                return
+            _unload_locked()
+            try:
+                state.set_state("loading", f"正在按 {precision} 加载（首次需几分钟）…",
+                                precision=precision)
+                state.pipe = _build_pipe(precision)
+                gc.collect()
+                _malloc_trim()
+                if paths.get_lora_autoload():
+                    lora._load_all_loras_locked()  # 默认全量常驻；KREA_LORA_AUTLOAD=0 关闭
+                # 编译必须装在 LoRA 注入之后：PEFT 会替换子模块，先编译会拿到失效引用
+                if precision == "fp8":
+                    _install_compile(state.pipe)
+                if precision == "bf16":
+                    detail = "bf16 · offload 模式（按需进出显存）"
+                else:
+                    vram = torch.cuda.memory_allocated() / 2**30
+                    detail = f"{precision} · 常驻 {vram:.1f} GiB"
+                state.set_state("ready", detail, precision=precision,
+                                vram_gb=round(vram if precision != "bf16" else 0.0, 1))
+            except Exception as exc:  # noqa: BLE001 - 加载失败细节透出给前端
+                logger.exception("model load failed")
+                state.pipe = None
+                state.set_state("error", f"模型加载失败：{exc}", precision=precision)
+
+        if precision == "fp8" and compile_enabled():
+            # 锁外起线程：预编译约 1 分钟，不能算进「加载完成」；失败也不影响使用
+            threading.Thread(target=_warmup_compile, name="fp8-warmup",
+                             daemon=True).start()
+    finally:
+        with _load_lock:
+            if _load_inflight == precision:
+                _load_inflight = None
+
+
+def unload_model(timeout: float = 5.0) -> None:
+    """卸载模型。生成/加载中最多等 timeout 秒——HTTP 请求不能被一个长任务吊死，
+    等不到就抛 RuntimeError，由上层回 409（与 LoRA 开关同一策略）。"""
+    if not state.model_lock.acquire(timeout=timeout):
+        busy = "模型正在加载" if state.MODEL_STATE["state"] == "loading" else "生成进行中"
+        raise RuntimeError(f"{busy}，稍后再试")
+    try:
         _unload_locked()
-        try:
-            state.set_state("loading", f"正在按 {precision} 加载（首次需几分钟）…",
-                            precision=precision)
-            state.pipe = _build_pipe(precision)
-            gc.collect()
-            _malloc_trim()
-            if paths.get_lora_autoload():
-                lora._load_all_loras_locked()  # 默认全量常驻；KREA_LORA_AUTLOAD=0 关闭
-            # 编译必须装在 LoRA 注入之后：PEFT 会替换子模块，先编译会拿到失效引用
-            if precision == "fp8":
-                _install_compile(state.pipe)
-            if precision == "bf16":
-                detail = "bf16 · offload 模式（按需进出显存）"
-            else:
-                vram = torch.cuda.memory_allocated() / 2**30
-                detail = f"{precision} · 常驻 {vram:.1f} GiB"
-            state.set_state("ready", detail, precision=precision,
-                            vram_gb=round(vram if precision != "bf16" else 0.0, 1))
-        except Exception as exc:  # noqa: BLE001 - 加载失败细节透出给前端
-            logger.exception("model load failed")
-            state.pipe = None
-            state.set_state("error", f"模型加载失败：{exc}", precision=precision)
-
-    if precision == "fp8" and compile_enabled():
-        # 锁外起线程：预编译约 1 分钟，不能算进「加载完成」；失败也不影响使用
-        threading.Thread(target=_warmup_compile, name="fp8-warmup",
-                         daemon=True).start()
-
-
-def unload_model() -> None:
-    with state.model_lock:
-        _unload_locked()
+    finally:
+        state.model_lock.release()
 
 
 def get_model_state() -> dict:

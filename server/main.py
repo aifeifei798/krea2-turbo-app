@@ -7,7 +7,6 @@ import hmac
 import json
 import re
 import logging
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -22,7 +21,8 @@ from . import paths, pipeline
 # pipeline 的 INFO（模型加载/LoRA 装载/状态迁移）落到 .server.log，便于排查卡顿
 logging.basicConfig(level=logging.INFO)
 from .presets import (DEFAULT_STEPS, MAX_BATCH, MAX_ROUNDS, MAX_STYLES,
-                      MAX_STEPS, get_presets, get_role, get_style)
+                      MAX_STEPS, get_aspect, get_presets, get_role,
+                      get_style)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -49,7 +49,8 @@ async def api_key_guard(request, call_next):
     """/api/* 一律校验 X-API-Key（UI 首次访问会弹窗收集并存储）；其余路径（页面/图片）开放。"""
     if request.url.path.startswith("/api"):
         given = request.headers.get("X-API-Key", "")
-        if not hmac.compare_digest(given, API_KEY):
+        # compare_digest 传含非 ASCII 的 str 会抛 TypeError（→500），一律按 bytes 比
+        if not hmac.compare_digest(given.encode(), API_KEY.encode()):
             return JSONResponse({"detail": "API 密钥缺失或不正确"}, status_code=401)
     return await call_next(request)
 
@@ -79,15 +80,16 @@ class GenerateIn(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=2**63 - 1)  # torch.Generator 上限
     batch: int = Field(default=1, ge=1, le=MAX_BATCH)
     rounds: int = Field(default=1, ge=1, le=MAX_ROUNDS)
-    init_image: str | None = Field(default=None, max_length=8_000_000)  # base64 参考图（重绘）
-    mask_image: str | None = Field(default=None, max_length=8_000_000)  # base64 蒙版（白=重绘）
+    init_image: str | None = Field(default=None, max_length=pipeline.MAX_IMAGE_B64)  # 参考图（重绘）
+    mask_image: str | None = Field(default=None, max_length=pipeline.MAX_IMAGE_B64)  # 蒙版（白=重绘）
     strength: float = Field(default=0.6, ge=0.05, le=0.95)  # 重绘幅度
     source_id: str | None = Field(default=None, max_length=64)  # 局部重绘源图 id（前后对比用）
     loras: list[LoraIn] = Field(default_factory=list, max_length=8)
 
 
 class ModelLoadIn(BaseModel):
-    precision: Literal["bf16", "int8", "int4"]
+    # 与 model._PRECISIONS 保持一致：UI 的四个精度按钮都能切，fp8 是默认值
+    precision: Literal["bf16", "fp8", "int8", "int4"]
 
 
 class LoraToggleIn(BaseModel):
@@ -113,17 +115,18 @@ def model_state():
 
 @app.post("/api/model/load")
 def model_load(body: ModelLoadIn):
-    state = pipeline.get_model_state()
-    if state["state"] == "loading":
+    # 占位与起线程在同一处原子完成：连点/并发只会受理一次，不会叠成两次重载
+    if not pipeline.request_load(body.precision):
         raise HTTPException(409, "模型正在加载中")
-    threading.Thread(target=pipeline.load_model, args=(body.precision,),
-                     name="model-loader", daemon=True).start()
     return {"ok": True, "precision": body.precision}
 
 
 @app.post("/api/model/unload")
 def model_unload():
-    pipeline.unload_model()
+    try:
+        pipeline.unload_model()
+    except RuntimeError as exc:  # 生成/加载中超过等待时间 → 409，请求不再吊死
+        raise HTTPException(409, str(exc)) from None
     return {"ok": True}
 
 
@@ -175,6 +178,9 @@ def generate(body: GenerateIn):
             raise HTTPException(400, f"未知风格: {sid}")
     if body.role and get_role(body.role) is None:
         raise HTTPException(400, f"未知角色: {body.role}")
+    # 比例 id 同样按白名单校验（前端加载时会自愈成 1:1，这里防 API 调用方传错却静默出 1:1）
+    if get_aspect(body.aspect)["id"] != body.aspect:
+        raise HTTPException(400, f"未知比例: {body.aspect}")
     # 参考图必须是可解码的有效图片（只读文件头，不整图解码：4K 图 14ms vs 96ms）
     if body.init_image is not None:
         try:

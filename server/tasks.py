@@ -16,7 +16,7 @@ import torch
 
 from . import paths, state
 from .lora import list_loras, sync_loras
-from .model import DEFAULT_PRECISION, load_model
+from .model import DEFAULT_PRECISION, request_load
 from .presets import get_aspect, get_role, get_style, record_usage
 
 logger = logging.getLogger("krea.pipeline")
@@ -45,6 +45,9 @@ def _open_image_b64(b64: str):
     from PIL import Image
     if b64.startswith("data:"):
         b64 = b64.split(",", 1)[-1]
+    # 手工 / 命令行 base64 常带换行，validate=True 不认空白：先剔掉再严格解码
+    if "\n" in b64 or "\r" in b64 or "\t" in b64 or " " in b64:
+        b64 = "".join(b64.split())
     if len(b64) > MAX_IMAGE_B64:
         raise ImageLimitError(f"图片数据过大：{len(b64) / 2**20:.1f} MB"
                               f"（上限 {MAX_IMAGE_B64 // 2**20} MB）")
@@ -196,10 +199,15 @@ def _new_task(req: state.GenRequest) -> dict:
         "rounds": req.rounds,
         "round": 0,
         "canceled": False,
+        "cancel": False,
         "error": None,
+        "finished_at": None,
         "images": [],
         "request": {
             "prompt": req.prompt,
+            # 占位：worker 才会填真实值。所有键都在这里建好——任务存活期间只改值不新增键，
+            # 这样 get_task 在锁里 json.dumps 时不会撞上「dictionary changed size」。
+            "full_prompt": "",
             "styles": [{"id": sid, "name": get_style(sid)["name"]}
                        for sid in req.styles if get_style(sid)["id"] == sid],
             "role": {"id": role["id"], "name": role["name"]} if role else None,
@@ -445,7 +453,12 @@ def _run_task(req: state.GenRequest) -> None:
                 task["images"].append(
                     _save_image(image, task, seed, round_idx * req.batch + i, src_prepared))
         task["state"] = "done"
-        record_usage(req.styles, req.role)  # 成功才计使用频率
+        if not task.get("canceled"):
+            # 成功才计使用频率（取消的不算）；统计落盘失败也不能把已出图的任务翻成 error
+            try:
+                record_usage(req.styles, req.role)
+            except Exception:  # noqa: BLE001 - 统计不是出图的关键路径
+                logger.exception("record_usage failed")
     except Exception as exc:  # noqa: BLE001 - 生成失败细节透出给前端
         logger.exception("generation failed")
         task["state"] = "error"
@@ -465,20 +478,22 @@ def _worker() -> None:
         # 模型加载中：原地等就绪（加载期间提交的任务自动排队，不拒绝）
         while state.MODEL_STATE["state"] == "loading":
             time.sleep(0.5)
-        if state.MODEL_STATE["state"] != "ready" or state.pipe is None:
-            task["state"] = "error"
-            task["error"] = f"模型未就绪：{state.MODEL_STATE.get('detail') or '未加载'}"
-            task["finished_at"] = time.time()
-            continue
-        # 整轮生成持锁：期间卸载/换精度会等生成结束，避免 pipe 被换掉炸掉当前任务
+        # 就绪判断必须和生成在同一把锁里：_unload_locked 先置 pipe=None 再改状态，
+        # 锁外读会撞上「state=ready 但 pipe 已是 None」的中间态，把任务误判成未就绪。
+        # 换成锁内判断后，重载期间提交的任务会一直等到新模型就绪再跑。
         with state.model_lock:
+            if state.MODEL_STATE["state"] != "ready" or state.pipe is None:
+                task["state"] = "error"
+                task["error"] = f"模型未就绪：{state.MODEL_STATE.get('detail') or '未加载'}"
+                task["finished_at"] = time.time()
+                continue
+            # 整轮生成持锁：期间卸载/换精度会等生成结束，避免 pipe 被换掉炸掉当前任务
             _run_task(req)
 
 
 def start_background() -> None:
     """在 FastAPI lifespan 里调用：按默认精度加载模型 + 启动生成 worker。"""
-    threading.Thread(target=load_model, args=(DEFAULT_PRECISION,),
-                     name="model-loader", daemon=True).start()
+    request_load(DEFAULT_PRECISION)  # 与 POST /api/model/load 同一套原子占位
     threading.Thread(target=_worker, name="gen-worker", daemon=True).start()
 
 

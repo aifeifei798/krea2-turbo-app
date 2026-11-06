@@ -59,6 +59,7 @@ node ~/.zcode/skills/design-forge/scripts/forge.mjs static/index.html static/js/
 - 合成事件的 pointerId 调 `setPointerCapture` 会抛 NotFoundError——画布 handler 里必须 try/catch（主画布与精细弹窗都已处理）。
 - 前后端重复常量以 `/api/presets` 为准（max_styles/max_steps/default_steps），不要在前端再写死；`DEFAULT_LORA_WEIGHT`(0.4) 目前前后端各一份（lora.js / lora.py，pipeline 门面转发），改要同步。
 - 修图/图生图链路两个反直觉点，改之前先读 README「实现备注」：取消走 `pipe._interrupt`（`if self.interrupt: continue`，**不抛异常**，且 `__call__` 开头会复位，故 `on_step` 每步补旗）；蒙版外重注入的噪声级必须取 `scheduler.sigmas`（time_shift 之后），不能用 `_img2img_schedule` 的 raw 表。
+- 模型加载/卸载的两个约束：加载入口统一走 `model.request_load()`（原子占位，连点只受理一次，别再在端点里「先查 state 再起线程」）；worker 的「就绪」判断必须在 `model_lock` 内，因为 `_unload_locked` 先置 `pipe=None` 再改状态，锁外读会撞上「state=ready 但 pipe 已是 None」，把重载期间提交的任务误判成未就绪。
 
 ## 浏览器验证配方（IAB 实测有效）
 

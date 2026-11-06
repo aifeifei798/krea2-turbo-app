@@ -13,13 +13,15 @@
 from .lora import (DEFAULT_LORA_WEIGHT, list_loras, sync_loras,
                    toggle_lora)
 from .model import (DEFAULT_PRECISION, get_model_state,
-                    get_precision_hints, load_model, unload_model)
-from .tasks import (ImageLimitError, _decode_image_b64, _image_size_b64,
-                    cancel_task, enqueue, get_task, start_background)
+                    get_precision_hints, load_model, request_load, unload_model)
+from .tasks import (MAX_IMAGE_B64, ImageLimitError, _decode_image_b64,
+                    _image_size_b64, cancel_task, enqueue, get_task,
+                    start_background)
 
 __all__ = [
-    "DEFAULT_LORA_WEIGHT", "DEFAULT_PRECISION",
-    "load_model", "unload_model", "get_model_state", "get_precision_hints",
+    "DEFAULT_LORA_WEIGHT", "DEFAULT_PRECISION", "MAX_IMAGE_B64",
+    "load_model", "unload_model", "request_load",
+    "get_model_state", "get_precision_hints",
     "list_loras", "toggle_lora", "sync_loras",
     "start_background", "enqueue", "get_task", "cancel_task",
     "_decode_image_b64", "_image_size_b64", "ImageLimitError",

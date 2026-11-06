@@ -20,14 +20,18 @@ def _lora_display_name(path: Path) -> str:
 
 
 def list_loras() -> list[dict]:
-    """扫描 LoRA 目录（paths 配置），返回 [{id, name, filename, size_mb, loaded}]。"""
+    """扫描 LoRA 目录（paths 配置），返回 [{id, name, filename, size_mb, loaded}]。
+    每次整表重建：目录里删掉的文件不会在 _lora_files 里留下无法加载的残留 id。"""
+    global _lora_files
     lora_dir = paths.get_lora_dir()
     if not lora_dir.exists():
+        _lora_files = {}
         return []
     out = []
+    found: dict[str, Path] = {}
     for p in sorted(lora_dir.glob("*.safetensors")):
         lid = hashlib.sha1(p.name.encode()).hexdigest()[:8]
-        _lora_files[lid] = p
+        found[lid] = p
         out.append({
             "id": lid,
             "name": _lora_display_name(p),
@@ -35,6 +39,7 @@ def list_loras() -> list[dict]:
             "size_mb": round(p.stat().st_size / 2**20),
             "loaded": lid in _loaded_adapters,
         })
+    _lora_files = found
     return out
 
 

@@ -169,9 +169,14 @@ async function loadModel() {
 async function unloadModel() {
   try {
     const res = await apiFetch("/api/model/unload", { method: "POST" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(friendlyApiError({ ...err, status: res.status }));
+    }
   } catch (e) {
     toast(t("卸载失败：{m}", { m: e.message }), true);
+    await pollStatus(); // 失败也要刷新真实状态（多半还在生成/加载）
+    return;             // 失败时不能再提示「已卸载」
   }
   await pollStatus();
   // 卸载后 LoRA 全部回到未加载

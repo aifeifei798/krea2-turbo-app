@@ -57,5 +57,5 @@ def prune_tasks() -> None:
     """清理过期任务（done/error 且超过 TTL）。调用方持有 lock。"""
     now = time.time()
     for tid in [t for t, v in TASKS.items() if v["state"] in ("done", "error")
-                and now - v.get("finished_at", 0) > TASK_TTL]:
+                and now - (v.get("finished_at") or 0) > TASK_TTL]:
         TASKS.pop(tid, None)
